@@ -78,6 +78,7 @@ import { AssistantModule } from './modules/assistant/assistant.module';
 import { TenantContext } from './common/tenant/tenant-context';
 import { TenantModule } from './common/tenant/tenant.module';
 import { TenantRlsMiddleware } from './common/tenant/tenant-rls.middleware';
+import { AssetsModule } from './modules/assets/assets.module';
 
 @Module({
   providers: [
@@ -92,6 +93,7 @@ import { TenantRlsMiddleware } from './common/tenant/tenant-rls.middleware';
   ],
   imports: [
     TenantModule,
+    AssetsModule,
     InstrumentationModule,
     ConfigModule.forRoot({ isGlobal: true, load: [configuration], validate }),
     LoggerModule.forRoot({
