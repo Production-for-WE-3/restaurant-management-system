@@ -33,4 +33,9 @@ export class AssetsService {
     );
     return this.repository.save(assets);
   }
+
+  async remove(id: number): Promise<void> {
+    const tenantId = this.tenantContext.getTenantId();
+    await this.repository.delete(tenantId === null ? { id } : { id, tenantId });
+  }
 }

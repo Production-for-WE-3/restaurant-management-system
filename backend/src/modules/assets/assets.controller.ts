@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseIntPipe, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -24,5 +24,12 @@ export class AssetsController {
   @ApiOperation({ summary: 'Adds multiple organization assets' })
   create(@Body() dto: CreateAssetsDto, @CurrentUser() _user: User) {
     return this.assetsService.createMany(dto);
+  }
+
+  @Delete(':id')
+  @RequirePermissions('dashboard.view')
+  @ApiOperation({ summary: 'Removes an organization asset' })
+  remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() _user: User) {
+    return this.assetsService.remove(id);
   }
 }

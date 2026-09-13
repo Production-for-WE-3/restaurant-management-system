@@ -30,3 +30,11 @@ export function useCreateAssets() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["organization-assets"] }),
   })
 }
+
+export function useDeleteAsset() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (id: number) => apiClient<void>(`/assets/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["organization-assets"] }),
+  })
+}
