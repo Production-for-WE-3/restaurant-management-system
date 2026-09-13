@@ -113,7 +113,6 @@ export const navGroupDefs: NavGroupDef[] = [
       { href: "/dashboard/outlet-departments", label: "Departments", permission: "outlet-departments.view" },
       { href: "/dashboard/warehouses", label: "Warehouses", permission: "warehouses.view" },
       { href: "/dashboard/customers", label: "Customers", permission: "customers.view" },
-      { href: "/dashboard/assets", label: "Assets", permission: "settings.view" },
     ],
   },
   {

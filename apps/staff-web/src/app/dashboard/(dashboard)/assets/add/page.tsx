@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { ArrowLeft, Plus, Trash2 } from "lucide-react"
-import { useState } from "react"
+import { useState, type FormEvent } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -21,7 +21,7 @@ export default function AddAssetsPage() {
     setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: field === "quantity" || field === "rate" ? Number(value) : value } : item))
   }
 
-  async function submit(event: React.FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (items.some((item) => !item.serialNo.trim() || !item.name.trim() || item.quantity < 1 || item.rate <= 0)) {
       toast.error("Complete every asset row with a valid quantity and rate")

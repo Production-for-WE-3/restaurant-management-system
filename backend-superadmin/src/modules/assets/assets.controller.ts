@@ -13,14 +13,14 @@ export class AssetsController {
   constructor(private readonly assetsService: AssetsService) {}
 
   @Get()
-  @RequirePermissions('settings.view')
+  @RequirePermissions('dashboard.view')
   @ApiOperation({ summary: 'Lists organization assets' })
   findAll(@CurrentUser() _user: User) {
     return this.assetsService.findAll();
   }
 
   @Post()
-  @RequirePermissions('settings.manage')
+  @RequirePermissions('dashboard.view')
   @ApiOperation({ summary: 'Adds multiple organization assets' })
   create(@Body() dto: CreateAssetsDto, @CurrentUser() _user: User) {
     return this.assetsService.createMany(dto);

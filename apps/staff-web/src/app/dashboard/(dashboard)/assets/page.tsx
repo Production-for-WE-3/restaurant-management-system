@@ -1,70 +1,32 @@
 "use client"
 
-import { useState } from "react"
-import { ImageUploadField } from "@/components/ui/image-upload-field"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { useCurrentUser } from "@/lib/auth/current-user-context"
-import { useSettingsCategory, useUpdateSettings, type AppearanceSettings } from "@/hooks/use-settings"
+import Link from "next/link"
+import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { toast } from "sonner"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useAssets } from "@/hooks/use-assets"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
+const money = (value: number) => value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
 export default function AssetsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("settings.manage")
-  const { data } = useSettingsCategory<AppearanceSettings>("appearance")
-  const updateSettings = useUpdateSettings<AppearanceSettings>("appearance")
-  const [logoUrl, setLogoUrl] = useState<string | undefined>()
-  const [faviconUrl, setFaviconUrl] = useState<string | undefined>()
-
-  const currentLogo = logoUrl ?? data?.logoUrl ?? ""
-  const currentFavicon = faviconUrl ?? data?.faviconUrl ?? ""
-
-  async function save() {
-    try {
-      await updateSettings.mutateAsync({ logoUrl: currentLogo, faviconUrl: currentFavicon })
-      toast.success("Assets saved")
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to save assets")
-    }
-  }
-
+  const { data: assets = [], isLoading } = useAssets()
   usePageTitle("Assets")
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-4">
-      <div>
-        <h1 className="text-lg font-semibold">Assets</h1>
-        <p className="text-sm text-muted-foreground">Upload and manage this restaurant&apos;s branding images.</p>
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div><h1 className="text-lg font-semibold">Organization assets</h1><p className="text-sm text-muted-foreground">View the assets registered for this organization.</p></div>
+        <Button render={<Link href="/dashboard/assets/add" />}><Plus /> Add assets</Button>
       </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Branding assets</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Logo</p>
-            <ImageUploadField
-              value={currentLogo}
-              onChange={setLogoUrl}
-              disabled={!canManage}
-              hint="PNG, JPEG, WebP, GIF or ICO up to 2MB."
-            />
-          </div>
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Favicon</p>
-            <ImageUploadField
-              value={currentFavicon}
-              onChange={setFaviconUrl}
-              disabled={!canManage}
-              hint="A square PNG or ICO works best."
-            />
-          </div>
-          {canManage && <Button type="button" onClick={() => void save()} disabled={updateSettings.isPending}>{updateSettings.isPending ? "Saving..." : "Save assets"}</Button>}
-          {!canManage && <p className="text-sm text-muted-foreground">You can view assets, but need settings management access to upload them.</p>}
-        </CardContent>
-      </Card>
+      <Card><CardHeader><CardTitle>Asset list</CardTitle></CardHeader><CardContent className="overflow-x-auto">
+        {isLoading ? <p className="py-8 text-center text-sm text-muted-foreground">Loading assets...</p> : assets.length === 0 ? <p className="py-8 text-center text-sm text-muted-foreground">No assets added yet.</p> : (
+          <Table><TableHeader><TableRow><TableHead>Serial no.</TableHead><TableHead>Name</TableHead><TableHead className="text-right">Quantity</TableHead><TableHead className="text-right">Rate</TableHead><TableHead className="text-right">Total</TableHead></TableRow></TableHeader>
+            <TableBody>{assets.map((asset) => <TableRow key={asset.id}><TableCell>{asset.serialNo}</TableCell><TableCell>{asset.name}</TableCell><TableCell className="text-right">{asset.quantity}</TableCell><TableCell className="text-right">{money(asset.rate)}</TableCell><TableCell className="text-right font-medium">{money(asset.total)}</TableCell></TableRow>)}</TableBody>
+          </Table>
+        )}
+      </CardContent></Card>
     </div>
   )
 }
