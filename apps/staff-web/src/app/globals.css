@@ -101,13 +101,13 @@
    rules provide grouping without turning every section into a card. */
 .dashboard-page .dash-panel,
 .dashboard-page .dash-stat { border-radius: 0; background: transparent; box-shadow: none; }
-.dashboard-page .dash-panel { border: 0; padding: 12px 0; }
+.dashboard-page .dash-panel { border: 0; padding: 20px 24px; }
 .dashboard-page .dash-stat { border: 0; border-bottom: 1px solid var(--border); padding: 14px 10px 16px 0; }
 .dashboard-page .dash-stat-grid { border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); gap: 0; }
 .dashboard-page .dash-stat + .dash-stat { border-left: 1px solid var(--border); padding-left: 18px; }
 .dashboard-page .dash-main-grid { gap: 0; border-bottom: 1px solid var(--border); }
 .dashboard-page .dash-main-grid > .dash-panel + .dash-panel { border-left: 1px solid var(--border); padding-left: 24px; }
-.dashboard-page .items-panel { border-bottom: 1px solid var(--border); padding: 14px 0; }
+.dashboard-page .items-panel { border-bottom: 1px solid var(--border); padding: 20px 24px; }
 .dashboard-page .lower-grid { border-bottom: 1px solid var(--border); }
 .dashboard-page .activity-panel { border-bottom: 1px solid var(--border); }
 .dashboard-page .activity { border: 0; border-left: 1px solid var(--border); border-radius: 0; padding: 8px 10px; }
@@ -116,6 +116,8 @@
 .dashboard-page .queue-row { border-color: var(--border); }
 
 @media (max-width: 700px) {
+  .dashboard-page .dash-panel,
+  .dashboard-page .items-panel { padding: 16px 14px; }
   .dashboard-page .dash-stat + .dash-stat { border-left: 0; padding-left: 10px; }
   .dashboard-page .dash-main-grid > .dash-panel + .dash-panel { border-left: 0; border-top: 1px solid var(--border); padding-left: 0; }
   .dashboard-page .activity { border-left: 0; border-bottom: 1px solid var(--border); }
