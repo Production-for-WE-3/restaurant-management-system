@@ -125,8 +125,8 @@ const CATEGORY_DEFAULTS: Record<SettingsCategory, Record<string, unknown>> = {
   },
 };
 
-function cacheKey(category: SettingsCategory): string {
-  return `settings:${category}`;
+function cacheKey(category: SettingsCategory, tenantId?: number): string {
+  return `settings:${tenantId ?? 'none'}:${category}`;
 }
 
 @Injectable()
@@ -168,22 +168,22 @@ export class SettingsService {
     }
   }
 
-  async get(category: SettingsCategory): Promise<Record<string, unknown>> {
+  async get(category: SettingsCategory, tenantId?: number): Promise<Record<string, unknown>> {
     const cached = await this.cache.get<Record<string, unknown>>(
-      cacheKey(category),
+      cacheKey(category, tenantId),
     );
     if (cached) return cached;
 
-    const row = await this.settingsRepository.findOne({ where: { category } });
+    const row = tenantId === undefined ? null : await this.settingsRepository.findOne({ where: { category, tenantId } });
     const merged = { ...CATEGORY_DEFAULTS[category], ...(row?.data ?? {}) };
-    await this.cache.set(cacheKey(category), merged, CACHE_TTL_SECONDS * 1000);
+    await this.cache.set(cacheKey(category, tenantId), merged, CACHE_TTL_SECONDS * 1000);
     return merged;
   }
 
-  async getAll(): Promise<Record<SettingsCategory, Record<string, unknown>>> {
+  async getAll(tenantId?: number): Promise<Record<SettingsCategory, Record<string, unknown>>> {
     const entries = await Promise.all(
       CATEGORIES.map(
-        async (category) => [category, await this.get(category)] as const,
+        async (category) => [category, await this.get(category, tenantId)] as const,
       ),
     );
     return Object.fromEntries(entries) as Record<
@@ -198,22 +198,24 @@ export class SettingsService {
     userId: number,
     ip?: string,
     userAgent?: string,
+    tenantId?: number,
   ): Promise<Record<string, unknown>> {
     this.assertKnownCategory(category);
+    if (tenantId === undefined) throw new BadRequestException('Tenant context is required to update settings');
 
-    let row = await this.settingsRepository.findOne({ where: { category } });
+    let row = await this.settingsRepository.findOne({ where: { category, tenantId } });
     const previousData = row?.data ?? {};
     const mergedData = { ...previousData, ...dto };
 
     if (!row) {
-      row = this.settingsRepository.create({ category, data: mergedData });
+      row = this.settingsRepository.create({ category, tenantId, data: mergedData });
     } else {
       row.data = mergedData;
     }
     row.updatedByUserId = userId;
     await this.settingsRepository.save(row);
 
-    await this.cache.del(cacheKey(category));
+    await this.cache.del(cacheKey(category, tenantId));
 
     await this.auditLogsService.record({
       userId,
@@ -242,36 +244,36 @@ export class SettingsService {
     return { ...CATEGORY_DEFAULTS[category], ...mergedData };
   }
 
-  async getBusinessSettings(): Promise<Record<string, unknown>> {
-    return this.get('business');
+  async getBusinessSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('business', tenantId);
   }
 
-  async getPosSettings(): Promise<Record<string, unknown>> {
-    return this.get('pos');
+  async getPosSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('pos', tenantId);
   }
 
-  async getKitchenSettings(): Promise<Record<string, unknown>> {
-    return this.get('kitchen');
+  async getKitchenSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('kitchen', tenantId);
   }
 
-  async getInventorySettings(): Promise<Record<string, unknown>> {
-    return this.get('inventory');
+  async getInventorySettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('inventory', tenantId);
   }
 
-  async getReservationSettings(): Promise<Record<string, unknown>> {
-    return this.get('reservation');
+  async getReservationSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('reservation', tenantId);
   }
 
-  async getLoyaltySettings(): Promise<Record<string, unknown>> {
-    return this.get('loyalty');
+  async getLoyaltySettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('loyalty', tenantId);
   }
 
-  async getNotificationSettings(): Promise<Record<string, unknown>> {
-    return this.get('notification');
+  async getNotificationSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('notification', tenantId);
   }
 
-  async getAppearanceSettings(): Promise<Record<string, unknown>> {
-    return this.get('appearance');
+  async getAppearanceSettings(tenantId?: number): Promise<Record<string, unknown>> {
+    return this.get('appearance', tenantId);
   }
 
   /**
@@ -284,7 +286,7 @@ export class SettingsService {
    * categories, which meant two inputs silently competing for one slot — the
    * business copy is gone and any leftover value in that row is ignored.
    */
-  async getPublicBranding(): Promise<{
+  async getPublicBranding(tenantId?: number): Promise<{
     restaurantName: string | null;
     logoUrl: string | null;
     faviconUrl: string | null;
@@ -298,8 +300,8 @@ export class SettingsService {
     qrTemplateTableFontSize: number | null;
   }> {
     const [business, appearance] = await Promise.all([
-      this.get('business'),
-      this.get('appearance'),
+      this.get('business', tenantId),
+      this.get('appearance', tenantId),
     ]);
 
     const pick = (value: unknown): string | null =>

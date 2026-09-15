@@ -26,8 +26,8 @@ export class SettingsController {
   @Get()
   @RequirePermissions('settings.view')
   @ApiOperation({ summary: 'Returns all settings categories as one object' })
-  getAll() {
-    return this.settingsService.getAll();
+  getAll(@Req() req: Request & { tenantId?: number }) {
+    return this.settingsService.getAll(req.tenantId);
   }
 
   // Two path segments, so this can't be swallowed by @Get(':category') below —
@@ -39,16 +39,16 @@ export class SettingsController {
     summary:
       'Restaurant name, logo, favicon and primary colour — unauthenticated, for app chrome',
   })
-  getPublicBranding() {
-    return this.settingsService.getPublicBranding();
+  getPublicBranding(@Req() req: Request & { tenantId?: number }) {
+    return this.settingsService.getPublicBranding(req.tenantId);
   }
 
   @Get(':category')
   @RequirePermissions('settings.view')
   @ApiOperation({ summary: 'Returns one settings category, merged with defaults' })
-  getOne(@Param('category') category: string) {
+  getOne(@Param('category') category: string, @Req() req: Request & { tenantId?: number }) {
     assertKnownCategory(category);
-    return this.settingsService.get(category);
+    return this.settingsService.get(category, req.tenantId);
   }
 
   // Category is a dynamic path param, so there's no single DTO class NestJS
@@ -64,7 +64,7 @@ export class SettingsController {
     @Param('category') category: string,
     @Body() dto: Record<string, unknown>,
     @CurrentUser() user: User,
-    @Req() req: Request,
+    @Req() req: Request & { tenantId?: number },
   ) {
     assertKnownCategory(category);
     return this.settingsService.update(
@@ -73,6 +73,7 @@ export class SettingsController {
       user.id,
       req.ip,
       req.headers['user-agent'] as string | undefined,
+      req.tenantId,
     );
   }
 }

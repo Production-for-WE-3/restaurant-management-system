@@ -10,6 +10,7 @@ import { useCurrentUser } from "@rms/auth/current-user-context"
 
 const ACTIVE_OUTLET_STORAGE_KEY = "active-outlet-id"
 const ACTIVE_TENANT_STORAGE_KEY = "active-tenant-slug"
+const ACTIVE_TENANT_ID_STORAGE_KEY = "active-tenant-id"
 const ACTIVE_DEPARTMENT_STORAGE_KEY = "active-department-id"
 const ALL_OUTLETS_SENTINEL = "all"
 
@@ -72,10 +73,14 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
 
   useEffect(() => {
     if (!isSuperadmin || tenantsQuery.isLoading || tenants.length === 0) return
-    const selected = tenants.some((tenant) => tenant.slug === activeTenantSlug)
-    if (!selected) {
-      setActiveTenantSlugState(tenants[0].slug)
-      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, tenants[0].slug)
+    const selectedTenant = tenants.find((tenant) => tenant.slug === activeTenantSlug) ?? tenants[0]
+    const tenantChanged = localStorage.getItem(ACTIVE_TENANT_ID_STORAGE_KEY) !== String(selectedTenant.id)
+    if (selectedTenant.slug !== activeTenantSlug) {
+      setActiveTenantSlugState(selectedTenant.slug)
+      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, selectedTenant.slug)
+    }
+    if (tenantChanged) {
+      localStorage.setItem(ACTIVE_TENANT_ID_STORAGE_KEY, String(selectedTenant.id))
       setIsAllOutlets(true)
       setOutletIdState(null)
       // Reference-data queries such as roles and positions can start before
@@ -86,9 +91,11 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
   }, [activeTenantSlug, isSuperadmin, tenants, tenantsQuery.isLoading, queryClient])
 
   function setActiveTenantSlug(slug: string) {
-    if (!tenants.some((tenant) => tenant.slug === slug)) return
+    const selectedTenant = tenants.find((tenant) => tenant.slug === slug)
+    if (!selectedTenant) return
     setActiveTenantSlugState(slug)
     localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, slug)
+    localStorage.setItem(ACTIVE_TENANT_ID_STORAGE_KEY, String(selectedTenant.id))
     setIsAllOutlets(true)
     setOutletIdState(null)
     // Tenant is part of the server-side request context, so cached results

@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { AppConfig } from '../../config/configuration';
 import type { Cache } from 'cache-manager';
 import { Repository } from 'typeorm';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OutletsService } from '../outlets/outlets.service';
@@ -125,8 +126,8 @@ const CATEGORY_DEFAULTS: Record<SettingsCategory, Record<string, unknown>> = {
   },
 };
 
-function cacheKey(category: SettingsCategory): string {
-  return `settings:${category}`;
+function cacheKey(category: SettingsCategory, tenantId: number | null): string {
+  return `settings:${tenantId ?? 'none'}:${category}`;
 }
 
 @Injectable()
@@ -139,6 +140,7 @@ export class SettingsService {
     private readonly outletsService: OutletsService,
     private readonly configService: ConfigService<AppConfig>,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
+    private readonly tenantContext: TenantContext,
   ) {}
 
   /**
@@ -169,14 +171,15 @@ export class SettingsService {
   }
 
   async get(category: SettingsCategory): Promise<Record<string, unknown>> {
+    const tenantId = this.tenantContext.getTenantId();
     const cached = await this.cache.get<Record<string, unknown>>(
-      cacheKey(category),
+      cacheKey(category, tenantId),
     );
     if (cached) return cached;
 
-    const row = await this.settingsRepository.findOne({ where: { category } });
+    const row = tenantId === null ? null : await this.settingsRepository.findOne({ where: { category, tenantId } });
     const merged = { ...CATEGORY_DEFAULTS[category], ...(row?.data ?? {}) };
-    await this.cache.set(cacheKey(category), merged, CACHE_TTL_SECONDS * 1000);
+    await this.cache.set(cacheKey(category, tenantId), merged, CACHE_TTL_SECONDS * 1000);
     return merged;
   }
 
@@ -200,20 +203,22 @@ export class SettingsService {
     userAgent?: string,
   ): Promise<Record<string, unknown>> {
     this.assertKnownCategory(category);
+    const tenantId = this.tenantContext.getTenantId();
+    if (tenantId === null) throw new BadRequestException('Tenant context is required to update settings');
 
-    let row = await this.settingsRepository.findOne({ where: { category } });
+    let row = await this.settingsRepository.findOne({ where: { category, tenantId } });
     const previousData = row?.data ?? {};
     const mergedData = { ...previousData, ...dto };
 
     if (!row) {
-      row = this.settingsRepository.create({ category, data: mergedData });
+      row = this.settingsRepository.create({ category, tenantId, data: mergedData });
     } else {
       row.data = mergedData;
     }
     row.updatedByUserId = userId;
     await this.settingsRepository.save(row);
 
-    await this.cache.del(cacheKey(category));
+    await this.cache.del(cacheKey(category, tenantId));
 
     await this.auditLogsService.record({
       userId,

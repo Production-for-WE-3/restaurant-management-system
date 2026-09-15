@@ -20,7 +20,10 @@ export class GlobalSetting {
   })
   id: number;
 
-  @Column({ type: 'varchar', length: 50, unique: true })
+  @Column({ name: 'tenant_id', type: 'bigint', transformer: new BigIntTransformer() })
+  tenantId: number;
+
+  @Column({ type: 'varchar', length: 50 })
   category: SettingsCategory;
 
   @Column({ type: 'jsonb', default: {} })
