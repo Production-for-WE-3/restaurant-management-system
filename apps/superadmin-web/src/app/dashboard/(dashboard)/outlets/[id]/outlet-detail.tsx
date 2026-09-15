@@ -82,8 +82,8 @@ export function OutletDetail({ outletId }: { outletId: number }) {
             <AlertDialogHeader>
               <AlertDialogTitle>Delete outlet &quot;{outlet.name}&quot;?</AlertDialogTitle>
               <AlertDialogDescription>
-                This permanently deletes any departments and warehouses under this outlet too. If orders,
-                reservations, or other records still reference it, the delete will be rejected instead.
+                The outlet and its historical records will be preserved. Its slug will be replaced with a
+                random slug so the original slug can be reused.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

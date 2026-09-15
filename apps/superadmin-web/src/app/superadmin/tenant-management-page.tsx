@@ -5,7 +5,7 @@ import Link from "next/link"
 import { useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { useDeleteSuperadminTenant, useUpdateSuperadminTenant } from "@/hooks/use-outlets"
+import { useDeleteOutlet, useDeleteSuperadminTenant, useUpdateSuperadminTenant } from "@/hooks/use-outlets"
 import { queryKeys } from "@/lib/query-keys"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
@@ -33,6 +33,7 @@ export default function SuperadminPage() {
   const [outletNames, setOutletNames] = useState<Record<number, string>>({})
   const updateTenant = useUpdateSuperadminTenant()
   const deleteTenant = useDeleteSuperadminTenant()
+  const deleteOutlet = useDeleteOutlet()
   usePageTitle("Tenant Management")
 
   const load = async () => {
@@ -100,12 +101,21 @@ export default function SuperadminPage() {
   }
 
   async function deleteTenantRecord(tenant: Tenant) {
-    if (!window.confirm(`Delete tenant "${tenant.name}"? This is only allowed when no users, outlets, or related records reference it.`)) return
+    if (!window.confirm(`Delete tenant "${tenant.name}"? Its historical data will be preserved under a random slug.`)) return
     try {
       await deleteTenant.mutateAsync(tenant.id)
       toast.success("Tenant deleted")
       await load()
     } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to delete tenant") }
+  }
+
+  async function deleteOutletRecord(outlet: Outlet) {
+    if (!window.confirm(`Delete outlet "${outlet.name}"? Its historical data will be preserved under a random slug.`)) return
+    try {
+      await deleteOutlet.mutateAsync(outlet.id)
+      toast.success("Outlet deleted")
+      await load()
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to delete outlet") }
   }
 
   async function importRoleTemplates(tenant: Tenant) {
@@ -177,7 +187,7 @@ export default function SuperadminPage() {
           </div>
           <div className="mt-4 space-y-2">
             <div className="flex flex-wrap gap-2"><input className="h-8 min-w-56 rounded-md border bg-background px-3 text-sm" placeholder="New outlet name" value={outletNames[tenant.id] ?? ""} onChange={(event) => setOutletNames((current) => ({ ...current, [tenant.id]: event.target.value }))} /><Button size="sm" onClick={() => void createOutlet(tenant)}>Add outlet</Button></div>
-            {(tenant.outlets ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No outlets assigned.</p> : tenant.outlets?.map((outlet) => <div key={outlet.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2"><span>{outlet.name} <span className="text-xs text-muted-foreground">({outlet.slug})</span></span><select className="h-8 rounded-md border bg-background px-2 text-sm" value={tenant.id} onChange={(e) => void moveOutlet(outlet.id, Number(e.target.value))}>{tenants.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select></div>)}</div>
+            {(tenant.outlets ?? []).length === 0 ? <p className="text-sm text-muted-foreground">No outlets assigned.</p> : tenant.outlets?.map((outlet) => <div key={outlet.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md bg-muted/40 px-3 py-2"><span>{outlet.name} <span className="text-xs text-muted-foreground">({outlet.slug})</span></span><div className="flex items-center gap-2"><select className="h-8 rounded-md border bg-background px-2 text-sm" value={tenant.id} onChange={(e) => void moveOutlet(outlet.id, Number(e.target.value))}>{tenants.map((option) => <option key={option.id} value={option.id}>{option.name}</option>)}</select><Button size="sm" variant="destructive" onClick={() => void deleteOutletRecord(outlet)} disabled={deleteOutlet.isPending}>Delete</Button></div></div>)}</div>
           {expandedTenantId === tenant.id && <div className="mt-4 rounded-md border bg-muted/20 p-3"><p className="mb-2 text-sm font-medium">Tenant and outlet data</p><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{(summaries[tenant.id] ?? []).map((module) => <div key={module.key} className="rounded-md border bg-background px-3 py-2"><div className="text-sm font-medium">{module.label}</div><div className="text-xs text-muted-foreground">{module.count} records · {module.scope} scoped</div></div>)}</div></div>}
         </section>
       ))}

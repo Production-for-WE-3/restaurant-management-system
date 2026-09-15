@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
+import { ApiError } from "../client"
 import { useAssignedOutletDepartments } from "../hooks/use-outlet-departments"
 import type { OutletDepartment } from "../hooks/use-outlet-departments"
 import { useAssignedOutlets, useOutlets, useSuperadminTenants, type Outlet, type SuperadminTenant } from "../hooks/use-outlets"
@@ -109,6 +110,9 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
   const outletQuery = isSuperadmin ? allOutletsQuery : assignedOutletsQuery
   const isLoadingOutlets = outletQuery.isLoading
   const outletQueryFailed = outletQuery.isError
+  const outletQueryErrorMessage = outletQuery.error instanceof ApiError && outletQuery.error.status === 403
+    ? "This tenant is inactive or unavailable. Ask an administrator to restore access or assign you to an active tenant."
+    : "The session is valid, but the staff permissions service could not load your assigned outlets."
   // Regular users select among their assigned outlets from Profile. The
   // shared header never exposes an "all" or null option for them.
   const showOutletPicker = isSuperadmin
@@ -206,7 +210,7 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
           <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
             <p className="text-sm font-medium">Unable to load your outlet access.</p>
             <p className="max-w-sm text-sm text-muted-foreground">
-              The session is valid, but the staff permissions service could not load your assigned outlets.
+              {outletQueryErrorMessage}
             </p>
             <button
               type="button"
