@@ -99,9 +99,7 @@ export class OutletsService {
         error instanceof QueryFailedError &&
         (error.driverError as { code?: string })?.code === '23505'
       ) {
-        throw new ConflictException(
-          `Outlet name "${dto.name}" is already in use`,
-        );
+        throw new ConflictException('Outlet slug is already in use');
       }
       throw error;
     }
@@ -120,9 +118,7 @@ export class OutletsService {
         error instanceof QueryFailedError &&
         (error.driverError as { code?: string })?.code === '23505'
       ) {
-        throw new ConflictException(
-          `Outlet name "${dto.name}" is already in use`,
-        );
+        throw new ConflictException('Outlet slug is already in use');
       }
       throw error;
     }
