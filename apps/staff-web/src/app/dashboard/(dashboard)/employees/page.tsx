@@ -51,7 +51,7 @@ export default function EmployeesPage() {
   const showSkeleton = useDelayedLoading(isLoading)
 
   const positionName = (id: number | null) => positions?.find((p) => p.id === id)?.name ?? "—"
-  const outletName = (id: number) => outlets?.data.find((o) => o.id === id)?.name ?? "Loading…"
+  const outletName = (id: number) => outlets?.data?.find((o) => o.id === id)?.name ?? "Loading…"
 
   const columns = useMemo<ColumnDef<Employee>[]>(
     () => [
@@ -66,7 +66,7 @@ export default function EmployeesPage() {
         ),
       },
       { id: "position", header: "Position", cell: ({ row }) => positionName(row.original.positionId) },
-      { id: "outlet", header: "Outlets", cell: ({ row }) => row.original.outletIds.map(outletName).join(", ") },
+      { id: "outlet", header: "Outlets", cell: ({ row }) => (row.original.outletIds ?? []).map(outletName).join(", ") || "No outlet assigned" },
       {
         id: "attendance",
         header: "Attendance",
@@ -116,7 +116,7 @@ export default function EmployeesPage() {
           <Select
             items={[
               { value: "all", label: "All outlets" },
-              ...(outlets?.data.map((outlet) => ({ value: String(outlet.id), label: outlet.name })) ?? []),
+              ...(outlets?.data?.map((outlet) => ({ value: String(outlet.id), label: outlet.name })) ?? []),
             ]}
             value={outletFilter}
             onValueChange={(v) => { setOutletFilter(v ?? "all"); setPage(1) }}
@@ -126,7 +126,7 @@ export default function EmployeesPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All outlets</SelectItem>
-              {outlets?.data.map((outlet) => (
+              {outlets?.data?.map((outlet) => (
                 <SelectItem key={outlet.id} value={String(outlet.id)}>
                   {outlet.name}
                 </SelectItem>

@@ -53,7 +53,8 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
   const { data: users } = useUsers({ limit: 100 })
   const { data: outlets } = useOutlets({ limit: 100 })
   const { data: superadminOutlets } = useSuperadminOutlets({ enabled: isSuperadmin })
-  const { data: outlet } = useOutlet(employee?.outletIds?.[0] ?? 0)
+  const primaryOutletId = employee?.outletIds?.[0] ?? 0
+  const { data: outlet } = useOutlet(primaryOutletId)
   const { data: performance } = useEmployeePerformance(employeeId)
   const linkedUser = users?.data.find((u) => u.id === employee?.userId)
   const { data: roleAssignments } = useUserRoleAssignments(employee?.userId ?? 0)
@@ -82,7 +83,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
     },
   })
   const selectedOutletId = form.watch("outletId")
-  const { data: departments } = useOutletDepartments({ outletId: employee?.outletIds?.[0] ?? selectedOutletId, limit: 100 })
+  const { data: departments } = useOutletDepartments({ outletId: primaryOutletId || selectedOutletId, limit: 100 })
 
   useEffect(() => {
     if (employee) {
@@ -92,7 +93,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
         phone: employee.phone ?? "",
         userId: employee.userId ?? undefined,
         positionId: employee.positionId ?? undefined,
-        outletId: employee.outletIds[0] ?? 0,
+        outletId: employee.outletIds?.[0] ?? 0,
         joiningDate: employee.joiningDate ?? "",
         employmentStatus: employee.employmentStatus,
         emergencyContactName: employee.emergencyContactName ?? "",
