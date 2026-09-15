@@ -107,7 +107,7 @@ export class AssistantService {
 
     const restaurant = await this.restaurantContext();
     if (route === 'CHAT') {
-      const data = { intent: 'restaurant_general_conversation', restaurantName: restaurant.name };
+      const data = { responseMode: 'greeting', intent: 'restaurant_general_conversation', restaurantName: restaurant.name };
       return { route, answer: await this.llm(question, data) };
     }
 
@@ -117,7 +117,7 @@ export class AssistantService {
       ? { intent: 'dailySummary', period: 'last 7 days', summaries: await this.db.query(`SELECT summary_date, metrics FROM daily_summaries WHERE outlet_id = ANY($1::bigint[]) ORDER BY summary_date DESC LIMIT 7`, [ids]) }
       : await this.safeData(question, ids, effectivePlan);
 
-    const llmContext = { restaurantName: restaurant.name, ...data };
+    const llmContext = { responseMode: 'restaurant_data', restaurantName: restaurant.name, ...data };
     return { route, answer: await this.llm(question, llmContext), ...(route === 'DATA' ? { data } : {}) };
   }
   async dailySummary(secret?: string) { const expected = process.env.ASSISTANT_CRON_SECRET; if (!expected || secret !== expected) throw new UnauthorizedException('Invalid cron secret'); const currentTenantId = this.tenantContext.getTenantId(); const tenantIds = currentTenantId === null ? (await this.db.query('SELECT id FROM tenants WHERE is_active = true ORDER BY id') as Array<{ id: string | number }>).map((row) => Number(row.id)) : [currentTenantId]; const results: Array<{ tenantId: number; outletId: number }> = []; for (const tenantId of tenantIds) { await this.tenantContext.run(tenantId, async () => { const outlets = (await this.db.query('SELECT id FROM outlets WHERE tenant_id = $1', [tenantId]) as Array<{ id: string | number }>).map((row) => Number(row.id)); for (const outletId of outlets) { const [metrics] = await this.db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'cancelled')::int AS bookings, COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancellations, COALESCE(SUM(grand_total) FILTER (WHERE status <> 'cancelled'),0)::numeric AS revenue FROM orders WHERE outlet_id=$1 AND created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + interval '1 day'`, [outletId]) as Array<Record<string, unknown>>; const narrative = await this.llm("Summarize today's restaurant performance and give concise actions.", metrics); await this.db.query(`INSERT INTO daily_summaries(tenant_id,outlet_id,summary_date,metrics,narrative) VALUES($1,$2,CURRENT_DATE,$3,$4) ON CONFLICT(outlet_id,summary_date) DO UPDATE SET metrics=EXCLUDED.metrics,narrative=EXCLUDED.narrative,updated_at=now()`, [tenantId, outletId, JSON.stringify({ ...metrics, occupancyRate: null, occupancyNote: 'Room inventory is not available in the current schema.' }), narrative]); results.push({ tenantId, outletId }); } }); } return { processed: results.length, results }; }
