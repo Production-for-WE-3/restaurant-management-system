@@ -18,8 +18,9 @@ const activityLabels: [string, LucideIcon][] = [["purchase-orders", Package], ["
 function useClock() { const [now, setNow] = useState(() => new Date()); useEffect(() => { const id = setInterval(() => setNow(new Date()), 30000); return () => clearInterval(id) }, []); return now }
 function greeting(hour: number) { if (hour < 12) return "Good morning"; if (hour < 17) return "Good afternoon"; return "Good evening" }
 function today() { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}` }
-function money(value: number) { return new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(value) }
-function time(value: string) { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
+function money(value: number) {
+  return new Intl.NumberFormat("ne-NP", {style: "currency",currency: "NPR",maximumFractionDigits: 0,}).format(value)
+}function time(value: string) { return new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) }
 function Panel({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <section className={`dash-panel ${className}`}>{children}</section> }
 function Heading({ title, subtitle, action = "View All", href }: { title: string; subtitle?: string; action?: string; href?: string }) { const destinations: Record<string, string> = { "Sales Overview": "/dashboard/analytics", "Recent Orders": "/dashboard/orders", "Top Selling Items": "/dashboard/foods", "Table Occupancy": "/dashboard/tables", "Kitchen Queue": "/dashboard/orders", "Today's domain activity": "/dashboard/analytics" }; const destination = href ?? destinations[title]; const label = action || "View All"; return <div className="dash-panel-heading"><div><h2>{title}</h2>{subtitle && <p>{subtitle}</p>}</div>{destination && <Link className="dash-link" href={destination}>{label} <span>→</span></Link>}</div> }
 function Status({ children }: { children: string }) { return <span className={`dash-status ${children.toLowerCase()}`}>{children.replaceAll("_", " ")}</span> }
