@@ -8,7 +8,7 @@ import { User } from '../users/entities/user.entity';
 import { ASSISTANT_SYSTEM_PROMPT, ASSISTANT_PERMISSION } from './assistant.constants';
 import { ASSISTANT_DATA_PERMISSIONS } from './assistant-data.registry';
 
-type Route = 'DATA' | 'INSIGHT' | 'CHAT';
+type Route = 'DATA' | 'INSIGHT';
 type DataIntent = 'occupancy' | 'inventory' | 'menu' | 'staffSummary' | 'payments' | 'serviceIssues' | 'cancellations' | 'bookings' | 'customers' | 'revenue' | 'orderDetails' | 'overview';
 type AnalyticsPlan = { intent: DataIntent | 'conversation'; period: 'today' | 'yesterday' | 'dayBeforeYesterday' | '7d' | '30d'; groupBy?: 'day' | 'type' };
 
@@ -36,7 +36,7 @@ export class AssistantService {
     } catch { return null; }
   }
   private period(q: string) { if (/(last|past|this)\s+week|7\s*days|hafta|week/.test(q)) return { from: "CURRENT_DATE - INTERVAL '6 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 7 days', value: '7d' as const }; if (/(last|past|this)\s+month|30\s*days|mahina|month/.test(q)) return { from: "CURRENT_DATE - INTERVAL '29 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 30 days', value: '30d' as const }; if (/day before yesterday|two days ago|parsi ko hijo/.test(q)) return { from: "CURRENT_DATE - INTERVAL '2 days'", to: "CURRENT_DATE - INTERVAL '1 day'", label: 'day before yesterday', value: 'dayBeforeYesterday' as const }; if (/yesterday|hijo/.test(q)) return { from: "CURRENT_DATE - INTERVAL '1 day'", to: 'CURRENT_DATE', label: 'yesterday', value: 'yesterday' as const }; return { from: 'CURRENT_DATE', to: "CURRENT_DATE + INTERVAL '1 day'", label: 'today', value: 'today' as const }; }
-  private intent(question: string): DataIntent { const q = question.toLowerCase(); if (/inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(q)) return 'inventory'; if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu'; if (/staff|employee|employees|team member/.test(q)) return 'staffSummary'; if (/payment|payments|cash|card|refund/.test(q)) return 'payments'; if (/my\s+order|order.*(going|status|ready|progress|where)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(q)) return 'orderDetails'; if (/table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(q)) return 'occupancy'; if (/complaint|issue|grievance|service request/.test(q)) return 'serviceIssues'; if (/cancel/.test(q)) return 'cancellations'; if (/booking|reservation/.test(q)) return 'bookings'; if (/customer|guest/.test(q)) return 'customers'; if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue'; return 'overview'; }
+  private intent(question: string): DataIntent { const q = question.toLowerCase(); if (/inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(q)) return 'inventory'; if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu'; if (/staff|employee|employees|team member/.test(q)) return 'staffSummary'; if (/payment|payments|cash|card|refund/.test(q)) return 'payments'; if (/my\s+order|order.*(going|status|ready|progress|where|done|placed|made)|any\s+orders?|have\s+we\s+(done|made|placed)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(q)) return 'orderDetails'; if (/table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(q)) return 'occupancy'; if (/complaint|issue|grievance|service request/.test(q)) return 'serviceIssues'; if (/cancel/.test(q)) return 'cancellations'; if (/booking|reservation/.test(q)) return 'bookings'; if (/customer|guest/.test(q)) return 'customers'; if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue'; return 'overview'; }
   private async safeData(question: string, ids?: number[], aiPlan?: AnalyticsPlan | null) {
     const q = question.toLowerCase();
     const period = this.period(q);
@@ -89,20 +89,20 @@ export class AssistantService {
     // database data, and cannot grant access by changing its predicted intent.
     const fallbackIntent = this.intent(question);
     const plan = await this.plan(question);
-    const selectedIntent = fallbackIntent !== 'overview' ? fallbackIntent : plan?.intent ?? fallbackIntent;
+    // Keep the assistant restaurant-focused: even an unrecognised or casual
+    // question is handled through the authorized restaurant overview instead
+    // of falling back to an unrestricted general chat response.
+    const selectedIntent = fallbackIntent !== 'overview'
+      ? fallbackIntent
+      : plan?.intent && plan.intent !== 'conversation'
+        ? plan.intent
+        : 'overview';
     const effectivePlan = plan?.intent === selectedIntent ? plan : null;
     await this.assertIntentAccess(user, selectedIntent);
 
     const route: Route = /(why|improv|recommend|insight|trend|going wrong|sudhar)/i.test(question)
       ? 'INSIGHT'
-      : selectedIntent === 'conversation' || selectedIntent === 'overview'
-        ? 'CHAT'
-        : 'DATA';
-
-    if (route === 'CHAT') {
-      const data = { intent: 'conversation' };
-      return { route, answer: await this.llm(question, data) };
-    }
+      : 'DATA';
 
     const allTablesRequested = /\ball\s+(the\s+)?tables?\b|\bevery\s+table\b|\ball\s+outlets?\b/i.test(question);
     const ids = await this.ids(user, allTablesRequested ? undefined : outletId);
