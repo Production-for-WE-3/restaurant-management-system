@@ -76,7 +76,7 @@ export function OutletDetail({ outletId }: { outletId: number }) {
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">{outlet.name}</h1>
-        {user.isSuperadmin && <AlertDialog>
+        {user.isSuperadmin && !outlet.slug.startsWith("deleted-") && <AlertDialog>
           <AlertDialogTrigger render={<Button variant="destructive">Delete</Button>} />
           <AlertDialogContent>
             <AlertDialogHeader>
