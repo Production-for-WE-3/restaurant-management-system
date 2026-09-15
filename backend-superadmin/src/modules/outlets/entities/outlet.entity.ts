@@ -3,6 +3,7 @@ import {
   CreateDateColumn,
   Entity,
   JoinColumn,
+  Index,
   ManyToOne,
   PrimaryColumn,
   UpdateDateColumn,
@@ -16,6 +17,7 @@ import { Tenant } from '../../tenants/entities/tenant.entity';
  * UserRoleAssignment/OutletDepartment/Warehouse resolve.
  */
 @Entity({ name: 'outlets' })
+@Index('outlets_tenant_slug_unique', ['tenantId', 'slug'], { unique: true })
 export class Outlet {
   @PrimaryColumn({
     type: 'bigint',
@@ -27,7 +29,7 @@ export class Outlet {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 80, unique: true })
+  @Column({ type: 'varchar', length: 80 })
   slug: string;
 
   @Column({ name: 'tenant_id', type: 'bigint', transformer: new BigIntTransformer() })
