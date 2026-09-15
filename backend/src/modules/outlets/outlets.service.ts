@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
 import { ILike, In, QueryFailedError, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
 import { CreateOutletDto } from './dto/create-outlet.dto';
@@ -129,18 +130,9 @@ export class OutletsService {
 
   async remove(id: number): Promise<void> {
     const outlet = await this.findOne(id);
-    try {
-      await this.outletsRepository.remove(outlet);
-    } catch (error) {
-      if (
-        error instanceof QueryFailedError &&
-        (error.driverError as { code?: string })?.code === '23503'
-      ) {
-        throw new ConflictException(
-          `Cannot delete outlet ${id}: other records (departments, warehouses, orders, etc.) still reference it`,
-        );
-      }
-      throw error;
-    }
+
+    // Preserve historical outlet data and release the original slug for reuse.
+    outlet.slug = `deleted-${randomUUID()}`;
+    await this.outletsRepository.save(outlet);
   }
 }

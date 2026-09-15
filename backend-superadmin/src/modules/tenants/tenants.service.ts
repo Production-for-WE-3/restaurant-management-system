@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
+import { randomUUID } from 'node:crypto';
 import { QueryFailedError, Repository } from 'typeorm';
 import { Outlet } from '../outlets/entities/outlet.entity';
 import { CreateOutletDto } from '../outlets/dto/create-outlet.dto';
@@ -40,14 +41,13 @@ export class TenantsService {
 
   async remove(id: number): Promise<void> {
     const tenant = await this.requireTenant(id);
-    try {
-      await this.tenants.remove(tenant);
-    } catch (error) {
-      if (error instanceof QueryFailedError && (error.driverError as { code?: string })?.code === '23503') {
-        throw new ConflictException('Cannot delete a tenant while users, outlets, or related records still reference it');
-      }
-      throw error;
-    }
+
+    // Tenant-owned records keep their tenant_id so historical data remains
+    // available for reporting. The tenant itself is made unreachable by
+    // deactivating it and replacing its public slug with a random tombstone.
+    tenant.slug = `deleted-${randomUUID()}`;
+    tenant.isActive = false;
+    await this.tenants.save(tenant);
   }
 
   async outletsForTenant(tenantId: number) {
