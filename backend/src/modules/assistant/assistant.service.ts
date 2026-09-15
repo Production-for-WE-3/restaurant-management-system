@@ -6,25 +6,11 @@ import { OutletAccessService, ALL_OUTLETS } from '../auth/outlet-access.service'
 import { PermissionsService } from '../auth/permissions.service';
 import { User } from '../users/entities/user.entity';
 import { ASSISTANT_SYSTEM_PROMPT, ASSISTANT_PERMISSION } from './assistant.constants';
+import { ASSISTANT_DATA_PERMISSIONS } from './assistant-data.registry';
 
 type Route = 'DATA' | 'INSIGHT' | 'CHAT';
 type DataIntent = 'occupancy' | 'inventory' | 'menu' | 'staffSummary' | 'payments' | 'serviceIssues' | 'cancellations' | 'bookings' | 'customers' | 'revenue' | 'orderDetails' | 'overview';
 type AnalyticsPlan = { intent: DataIntent | 'conversation'; period: 'today' | 'yesterday' | 'dayBeforeYesterday' | '7d' | '30d'; groupBy?: 'day' | 'type' };
-
-const INTENT_PERMISSION_SETS: Record<DataIntent, string[][]> = {
-  occupancy: [['dining-tables.view', 'dining-areas.view']],
-  inventory: [['inventory-stock.view', 'ingredients.view', 'warehouses.view']],
-  menu: [['foods.view']],
-  staffSummary: [['employees.view']],
-  payments: [['order-payments.view']],
-  serviceIssues: [['orders.view']],
-  cancellations: [['reservations.view']],
-  bookings: [['reservations.view']],
-  customers: [['customers.view']],
-  revenue: [['dashboard.view'], ['reports.view']],
-  orderDetails: [['orders.view']],
-  overview: [['dashboard.view'], ['reports.view']],
-};
 
 @Injectable()
 export class AssistantService {
@@ -32,7 +18,7 @@ export class AssistantService {
   private async assertAssistantAccess(user: User) { if (user.isSuperadmin) return; if (!(await this.permissions.hasPermission(user.id, ASSISTANT_PERMISSION))) throw new ForbiddenException('You do not have permission to use the operations assistant'); }
   private requireTenant(): number { const tenantId = this.tenantContext.getTenantId(); if (tenantId === null) throw new ForbiddenException('A tenant context is required for the restaurant assistant'); return tenantId; }
   private async ids(user: User, outletId?: number): Promise<number[]> { const tenantId = this.requireTenant(); const tenantOutlets = (await this.db.query('SELECT id FROM outlets WHERE tenant_id = $1 ORDER BY id', [tenantId]) as Array<{ id: string | number }>).map((row) => Number(row.id)); const outlets = await this.access.getAccessibleOutletIds(user.id, user.isSuperadmin); if (outletId !== undefined) { await this.access.assertOutletAccess(user.id, user.isSuperadmin, outletId); if (!tenantOutlets.includes(outletId)) throw new ForbiddenException('The selected outlet is outside the current tenant'); return [outletId]; } if (outlets !== ALL_OUTLETS && outlets.length === 0) throw new ForbiddenException('You do not have access to any outlet'); if (outlets === ALL_OUTLETS) return tenantOutlets; return tenantOutlets.filter((id) => outlets.includes(id)); }
-  private async assertIntentAccess(user: User, intent: DataIntent | 'conversation'): Promise<void> { if (intent === 'conversation' || user.isSuperadmin) return; const permissionSets = INTENT_PERMISSION_SETS[intent]; const granted = await this.permissions.getPermissionSlugs(user.id); if (!permissionSets.some((set) => set.every((permission) => granted.has(permission)))) throw new ForbiddenException(`You do not have permission to ask about ${intent}`); }
+  private async assertIntentAccess(user: User, intent: DataIntent | 'conversation'): Promise<void> { if (intent === 'conversation' || user.isSuperadmin) return; const permissionSets = ASSISTANT_DATA_PERMISSIONS[intent]; const granted = await this.permissions.getPermissionSlugs(user.id); if (!permissionSets.some((set) => set.every((permission) => granted.has(permission)))) throw new ForbiddenException(`You do not have permission to ask about ${intent}`); }
   private async llm(question: string, context: unknown) { const key = this.config.get<string>('GROQ_API_KEY') || process.env.GROQ_API_KEY; if (!key) throw new Error('GROQ_API_KEY is not configured'); const model = process.env.GROQ_MODEL || 'openai/gpt-oss-20b'; const response = await fetch('https://api.groq.com/openai/v1/chat/completions', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model, temperature: 0.1, max_tokens: 700, messages: [{ role: 'system', content: ASSISTANT_SYSTEM_PROMPT }, { role: 'user', content: `Q: ${question}\nData: ${JSON.stringify(context)}` }] }) }); if (!response.ok) throw new Error(`LLM request failed (${response.status})`); const answer = ((await response.json()) as { choices: [{ message: { content: string } }] }).choices[0].message.content; const thinkStart = answer.search(/<think>/i); if (thinkStart === -1) return answer.trim(); const afterThink = answer.slice(thinkStart); const thinkEnd = afterThink.search(/<\/think>/i); return (thinkEnd === -1 ? answer.slice(0, thinkStart) : answer.slice(0, thinkStart) + afterThink.slice(thinkEnd + afterThink.match(/<\/think>/i)![0].length)).trim(); }
   private async plan(question: string): Promise<AnalyticsPlan | null> {
     const key = this.config.get<string>('GROQ_API_KEY') || process.env.GROQ_API_KEY;
@@ -50,7 +36,7 @@ export class AssistantService {
     } catch { return null; }
   }
   private period(q: string) { if (/(last|past|this)\s+week|7\s*days|hafta|week/.test(q)) return { from: "CURRENT_DATE - INTERVAL '6 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 7 days', value: '7d' as const }; if (/(last|past|this)\s+month|30\s*days|mahina|month/.test(q)) return { from: "CURRENT_DATE - INTERVAL '29 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 30 days', value: '30d' as const }; if (/day before yesterday|two days ago|parsi ko hijo/.test(q)) return { from: "CURRENT_DATE - INTERVAL '2 days'", to: "CURRENT_DATE - INTERVAL '1 day'", label: 'day before yesterday', value: 'dayBeforeYesterday' as const }; if (/yesterday|hijo/.test(q)) return { from: "CURRENT_DATE - INTERVAL '1 day'", to: 'CURRENT_DATE', label: 'yesterday', value: 'yesterday' as const }; return { from: 'CURRENT_DATE', to: "CURRENT_DATE + INTERVAL '1 day'", label: 'today', value: 'today' as const }; }
-  private intent(question: string): DataIntent { const q = question.toLowerCase(); if (/inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(q)) return 'inventory'; if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu'; if (/staff|employee|employees|team member/.test(q)) return 'staffSummary'; if (/payment|payments|cash|card|refund/.test(q)) return 'payments'; if (/order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(q)) return 'orderDetails'; if (/occupancy|room/.test(q)) return 'occupancy'; if (/complaint|issue|grievance|service request/.test(q)) return 'serviceIssues'; if (/cancel/.test(q)) return 'cancellations'; if (/booking|reservation/.test(q)) return 'bookings'; if (/customer|guest/.test(q)) return 'customers'; if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue'; return 'overview'; }
+  private intent(question: string): DataIntent { const q = question.toLowerCase(); if (/inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(q)) return 'inventory'; if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu'; if (/staff|employee|employees|team member/.test(q)) return 'staffSummary'; if (/payment|payments|cash|card|refund/.test(q)) return 'payments'; if (/my\s+order|order.*(going|status|ready|progress|where)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(q)) return 'orderDetails'; if (/table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(q)) return 'occupancy'; if (/complaint|issue|grievance|service request/.test(q)) return 'serviceIssues'; if (/cancel/.test(q)) return 'cancellations'; if (/booking|reservation/.test(q)) return 'bookings'; if (/customer|guest/.test(q)) return 'customers'; if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue'; return 'overview'; }
   private async safeData(question: string, ids?: number[], aiPlan?: AnalyticsPlan | null) {
     const q = question.toLowerCase();
     const period = this.period(q);
@@ -58,10 +44,13 @@ export class AssistantService {
     const selected = aiPlan ?? { intent: fallbackIntent, period: period.value };
     const intent = selected.intent;
     const selectedPeriod = selected.period === period.value ? period : selected.period === '7d' ? { from: "CURRENT_DATE - INTERVAL '6 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 7 days' } : selected.period === '30d' ? { from: "CURRENT_DATE - INTERVAL '29 days'", to: "CURRENT_DATE + INTERVAL '1 day'", label: 'last 30 days' } : selected.period === 'dayBeforeYesterday' ? { from: "CURRENT_DATE - INTERVAL '2 days'", to: "CURRENT_DATE - INTERVAL '1 day'", label: 'day before yesterday' } : selected.period === 'yesterday' ? { from: "CURRENT_DATE - INTERVAL '1 day'", to: 'CURRENT_DATE', label: 'yesterday' } : { from: 'CURRENT_DATE', to: "CURRENT_DATE + INTERVAL '1 day'", label: 'today' };
-    if (intent === 'occupancy') return { intent, period: period.label, unavailable: true, reason: 'Room inventory is not available in the current database schema.' };
-
     const outletFilter = ids ? ' AND outlet_id = ANY($1::bigint[])' : '';
     const params = ids ? [ids] : [];
+    if (intent === 'occupancy') {
+      const metrics = await this.db.query(`SELECT dt.name, dt.code, dt.status, dt.capacity, o.name AS "outletName" FROM dining_tables dt JOIN outlets o ON o.id = dt.outlet_id WHERE dt.outlet_id = ANY($1::bigint[]) AND dt.is_active = true ORDER BY o.name, dt.sort_order, dt.name`, params);
+      return { intent, period: period.label, metrics };
+    }
+
     const dateFilter = (column: string) => ` AND ${column} >= ${selectedPeriod.from} AND ${column} < ${selectedPeriod.to}`;
     const groupBy = selected.groupBy;
     let metrics: unknown;
@@ -90,6 +79,38 @@ export class AssistantService {
     }
     return { intent, period: selectedPeriod.label, ...(groupBy ? { groupBy } : {}), metrics };
   }
-  async chat(user: User, question: string, outletId?: number) { await this.assertAssistantAccess(user); this.requireTenant(); if (!question.trim()) throw new BadRequestException('Question is required'); const ids = await this.ids(user, outletId); const fallbackIntent = this.intent(question); const plan = await this.plan(question); const selectedIntent = plan?.intent ?? fallbackIntent; await this.assertIntentAccess(user, selectedIntent); const route: Route = /(why|improv|recommend|insight|trend|going wrong|sudhar)/i.test(question) ? 'INSIGHT' : selectedIntent === 'conversation' || selectedIntent === 'overview' ? 'CHAT' : 'DATA'; const data = route === 'INSIGHT' ? { intent: 'dailySummary', period: 'last 7 days', summaries: await this.db.query(`SELECT summary_date, metrics FROM daily_summaries WHERE outlet_id = ANY($1::bigint[]) ORDER BY summary_date DESC LIMIT 7`, [ids]) } : route === 'DATA' ? await this.safeData(question, ids, plan) : { intent: 'conversation' }; return { route, answer: await this.llm(question, data), ...(route === 'DATA' ? { data } : {}) }; }
+  async chat(user: User, question: string, outletId?: number) {
+    await this.assertAssistantAccess(user);
+    this.requireTenant();
+    if (!question.trim()) throw new BadRequestException('Question is required');
+
+    // Authorize the requested data domain before resolving outlets or querying
+    // any restaurant data. The LLM planner receives only the question, never
+    // database data, and cannot grant access by changing its predicted intent.
+    const fallbackIntent = this.intent(question);
+    const plan = await this.plan(question);
+    const selectedIntent = fallbackIntent !== 'overview' ? fallbackIntent : plan?.intent ?? fallbackIntent;
+    const effectivePlan = plan?.intent === selectedIntent ? plan : null;
+    await this.assertIntentAccess(user, selectedIntent);
+
+    const route: Route = /(why|improv|recommend|insight|trend|going wrong|sudhar)/i.test(question)
+      ? 'INSIGHT'
+      : selectedIntent === 'conversation' || selectedIntent === 'overview'
+        ? 'CHAT'
+        : 'DATA';
+
+    if (route === 'CHAT') {
+      const data = { intent: 'conversation' };
+      return { route, answer: await this.llm(question, data) };
+    }
+
+    const allTablesRequested = /\ball\s+(the\s+)?tables?\b|\bevery\s+table\b|\ball\s+outlets?\b/i.test(question);
+    const ids = await this.ids(user, allTablesRequested ? undefined : outletId);
+    const data = route === 'INSIGHT'
+      ? { intent: 'dailySummary', period: 'last 7 days', summaries: await this.db.query(`SELECT summary_date, metrics FROM daily_summaries WHERE outlet_id = ANY($1::bigint[]) ORDER BY summary_date DESC LIMIT 7`, [ids]) }
+      : await this.safeData(question, ids, effectivePlan);
+
+    return { route, answer: await this.llm(question, data), ...(route === 'DATA' ? { data } : {}) };
+  }
   async dailySummary(secret?: string) { const expected = process.env.ASSISTANT_CRON_SECRET; if (!expected || secret !== expected) throw new UnauthorizedException('Invalid cron secret'); const currentTenantId = this.tenantContext.getTenantId(); const tenantIds = currentTenantId === null ? (await this.db.query('SELECT id FROM tenants WHERE is_active = true ORDER BY id') as Array<{ id: string | number }>).map((row) => Number(row.id)) : [currentTenantId]; const results: Array<{ tenantId: number; outletId: number }> = []; for (const tenantId of tenantIds) { await this.tenantContext.run(tenantId, async () => { const outlets = (await this.db.query('SELECT id FROM outlets WHERE tenant_id = $1', [tenantId]) as Array<{ id: string | number }>).map((row) => Number(row.id)); for (const outletId of outlets) { const [metrics] = await this.db.query(`SELECT COUNT(*) FILTER (WHERE status <> 'cancelled')::int AS bookings, COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancellations, COALESCE(SUM(grand_total) FILTER (WHERE status <> 'cancelled'),0)::numeric AS revenue FROM orders WHERE outlet_id=$1 AND created_at >= CURRENT_DATE AND created_at < CURRENT_DATE + interval '1 day'`, [outletId]) as Array<Record<string, unknown>>; const narrative = await this.llm("Summarize today's restaurant performance and give concise actions.", metrics); await this.db.query(`INSERT INTO daily_summaries(tenant_id,outlet_id,summary_date,metrics,narrative) VALUES($1,$2,CURRENT_DATE,$3,$4) ON CONFLICT(outlet_id,summary_date) DO UPDATE SET metrics=EXCLUDED.metrics,narrative=EXCLUDED.narrative,updated_at=now()`, [tenantId, outletId, JSON.stringify({ ...metrics, occupancyRate: null, occupancyNote: 'Room inventory is not available in the current schema.' }), narrative]); results.push({ tenantId, outletId }); } }); } return { processed: results.length, results }; }
 }
