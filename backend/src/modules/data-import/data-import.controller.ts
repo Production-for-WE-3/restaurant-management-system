@@ -8,14 +8,12 @@ import {
   Query,
   Res,
   UploadedFile,
-  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Response } from 'express';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { SuperadminGuard } from '../auth/guards/superadmin.guard';
 import { User } from '../users/entities/user.entity';
 import { ALLOWED_IMPORT_TYPES, MAX_IMPORT_UPLOAD_BYTES } from '../uploads/uploads.constants';
 import { DataImportService } from './data-import.service';
@@ -23,14 +21,9 @@ import { ImporterRegistry } from './importer-registry';
 import { CommitImportDto } from './dto/commit-import.dto';
 import { RevalidateImportDto } from './dto/revalidate-import.dto';
 
-/**
- * Centralized superadmin-only bulk-import portal. Every route here is
- * gated by SuperadminGuard (on top of the app-wide JwtAuthGuard) — the
- * frontend nav/route restriction is UX only, this is the real boundary.
- */
+/** Centralized authenticated bulk-import portal. */
 @ApiTags('data-import')
 @ApiBearerAuth()
-@UseGuards(SuperadminGuard)
 @Controller('data-import')
 export class DataImportController {
   constructor(
