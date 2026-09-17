@@ -57,7 +57,11 @@ export class PermissionsService {
       .addSelect('assigned_outlet.tenant_id', 'outletTenantId')
       .from('employees', 'employee')
       .innerJoin('users', 'assigned_user', 'assigned_user.id = employee.user_id')
-      .innerJoin(
+      // A dashboard/admin position is still a valid active assignment even when
+      // the employee is not linked to a specific outlet yet (e.g. global
+      // dashboard access). Requiring an active outlet assignment here makes
+      // portal resolution silently drop the position and fall back to 'staff'.
+      .leftJoin(
         'employee_outlet_assignments',
         'employee_assignment',
         'employee_assignment.employee_id = employee.id AND employee_assignment.is_active = true',
