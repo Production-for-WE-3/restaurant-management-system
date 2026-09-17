@@ -23,8 +23,8 @@ export class Food {
   })
   id: number;
 
-  @Column({ name: 'tenant_id', type: 'bigint', nullable: true, transformer: new BigIntTransformer() })
-  tenantId: number | null;
+  @Column({ name: 'tenant_id', type: 'bigint', transformer: new BigIntTransformer() })
+  tenantId: number;
 
   @Column({
     name: 'food_category_id',
@@ -41,7 +41,7 @@ export class Food {
   @Column({ type: 'varchar', length: 255 })
   name: string;
 
-  @Column({ type: 'varchar', length: 255, unique: true })
+  @Column({ type: 'varchar', length: 255 })
   slug: string;
 
   /**
