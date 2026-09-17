@@ -12,15 +12,15 @@ export interface CurrentUser {
   tenantId: number | null
   isSuperadmin: boolean
   permissions: string[]
-  /** Slugs of every role held via an active assignment — used to tailor UI (e.g. narrowing the sidebar for "admin") beyond what the flat permission set expresses. */
-  roleSlugs: string[]
-  /** Which app this user lands in after login — aggregated server-side from their role assignments' explicit `portal` field. */
+  /** Slugs of every active position linked to this user. */
+  positionSlugs: string[]
+  /** Which app this user lands in after login. */
   portal: "dashboard" | "staff"
   /** Whether the user can reach both the dashboard and staff apps — drives the header portal switcher. */
   hasBothPortals: boolean
-  /** Outlets this user holds an outlet-scoped role assignment for. Empty means global/unscoped access — treat as "every outlet". */
+  /** Outlets this user's active employee assignments provide access to. */
   outletIds: number[]
-  /** Outlet-departments this user holds a department-scoped role assignment for. Empty means no specific department assignment. */
+  /** Outlet-departments this user's active employee assignments provide access to. */
   departmentIds: number[]
 }
 

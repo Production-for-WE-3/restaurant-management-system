@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, ILike, In, IsNull, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
 import { generateDocumentNumber } from '../../common/utils/document-number.util';
-import { UserRoleAssignment } from '../roles/entities/user-role-assignment.entity';
 import { User } from '../users/entities/user.entity';
 import { Outlet } from '../outlets/entities/outlet.entity';
 import { Position } from './entities/position.entity';
@@ -23,8 +22,6 @@ export class EmployeesService {
   constructor(
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectRepository(Position) private readonly positionRepo: Repository<Position>,
-    @InjectRepository(UserRoleAssignment)
-    private readonly userRoleAssignmentRepo: Repository<UserRoleAssignment>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(EmployeeDepartmentAssignment)
     private readonly departmentAssignments: Repository<EmployeeDepartmentAssignment>,
@@ -34,11 +31,11 @@ export class EmployeesService {
 
   // ---- Positions ----
   async findAllPositions(tenantId?: number): Promise<PositionResponseDto[]> {
-    const positions = await this.positionRepo.find({ where: { isActive: true, ...(tenantId !== undefined ? { tenantId } : {}) }, order: { name: 'ASC' }, relations: ['defaultRole'] });
+    const positions = await this.positionRepo.find({ where: { isActive: true, ...(tenantId !== undefined ? { tenantId } : {}) }, order: { name: 'ASC' } });
     return positions.map((p) => this.toPositionResponse(p));
   }
   async findPosition(id: number): Promise<Position> {
-    const p = await this.positionRepo.findOne({ where: { id }, relations: ['defaultRole'] }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
+    const p = await this.positionRepo.findOne({ where: { id } }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
   }
   async findPositionResponse(id: number): Promise<PositionResponseDto> {
     return this.toPositionResponse(await this.findPosition(id));
@@ -54,38 +51,6 @@ export class EmployeesService {
   }
   async removePosition(id: number): Promise<void> {
     await this.findPosition(id); await this.positionRepo.delete(id);
-  }
-
-  /**
-   * Grants the position's default role to the employee's linked user account,
-   * scoped to the employee's outlet. Only adds — never revokes a role the
-   * employee already holds, since a user may accumulate roles beyond the one
-   * implied by their position.
-   */
-  private async syncRoleFromPosition(employee: Employee): Promise<void> {
-    if (!employee.userId) return;
-
-    // Roles are derived exclusively from the employee's position. Remove any
-    // previous direct/position-derived assignments before applying the current
-    // position, so changing position cannot leave stale access behind.
-    await this.userRoleAssignmentRepo.update(
-      { userId: employee.userId, isActive: true },
-      { isActive: false },
-    );
-
-    if (!employee.positionId) return;
-    const position = await this.positionRepo.findOne({
-      where: { id: employee.positionId },
-      relations: ['defaultRole'],
-    });
-    if (!position?.defaultRoleId) return;
-
-    const isGlobal = position.defaultRole?.level === 'global';
-    const outletIds = isGlobal ? [null] : await this.getOutletIds(employee.id);
-    for (const outletId of outletIds) {
-      const existing = await this.userRoleAssignmentRepo.findOne({ where: { userId: employee.userId, roleId: position.defaultRoleId, scopeType: isGlobal ? 'global' : 'outlet', outletId: outletId ?? IsNull(), outletDepartmentId: IsNull(), warehouseId: IsNull() } });
-      if (!existing) await this.userRoleAssignmentRepo.save(this.userRoleAssignmentRepo.create({ userId: employee.userId, roleId: position.defaultRoleId, scopeType: isGlobal ? 'global' : 'outlet', outletId, outletDepartmentId: null }));
-    }
   }
 
   // ---- Employees ----
@@ -112,9 +77,9 @@ export class EmployeesService {
     };
   }
 
-  /** Internal lookup — returns the raw entity (with position/defaultRole loaded) for outlet-access checks and other services. */
+  /** Internal lookup for outlet-access checks and other services. */
   async findOne(id: number): Promise<Employee> {
-    const e = await this.employeeRepo.findOne({ where: { id }, relations: ['position', 'position.defaultRole', 'user'] });
+    const e = await this.employeeRepo.findOne({ where: { id }, relations: ['position', 'user'] });
     if (!e) throw new NotFoundException(`Employee ${id} not found`); return e;
   }
 
@@ -261,15 +226,6 @@ export class EmployeesService {
       name: position.name,
       slug: position.slug,
       description: position.description,
-      defaultRoleId: position.defaultRoleId,
-      defaultRole: position.defaultRole
-        ? {
-            id: position.defaultRole.id,
-            name: position.defaultRole.name,
-            slug: position.defaultRole.slug,
-            level: position.defaultRole.level,
-          }
-        : null,
       isActive: position.isActive,
       createdAt: position.createdAt,
       updatedAt: position.updatedAt,

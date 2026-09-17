@@ -228,12 +228,12 @@ export class OrderPaymentsService {
         // delivery to superadmins plus whichever roles are configured under
         // Settings > Notifications (default: manager, cashier).
         const { cashNotificationRoles } = await this.settingsService.getNotificationSettings();
-        const roleSlugs = Array.isArray(cashNotificationRoles)
+        const positionSlugs = Array.isArray(cashNotificationRoles)
           ? (cashNotificationRoles as string[])
           : ['manager', 'cashier'];
-        const recipientUserIds = await this.notificationsService.getUserIdsByRole(
+        const recipientUserIds = await this.notificationsService.getUserIdsByPosition(
           order.outletId,
-          roleSlugs,
+          positionSlugs,
         );
         const notification = await this.notificationsService.create(
           notificationInput,

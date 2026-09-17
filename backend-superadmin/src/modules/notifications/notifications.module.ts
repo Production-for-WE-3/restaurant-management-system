@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
-import { RolesModule } from '../roles/roles.module';
 import { User } from '../users/entities/user.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
 import { EmailService } from './channels/email.service';
@@ -20,7 +19,6 @@ import { NotificationsService } from './notifications.service';
   imports: [
     TypeOrmModule.forFeature([Notification, NotificationIssue, NotificationPreference, PushSubscription, User, Attendance]),
     AuthModule,
-    RolesModule,
   ],
   controllers: [NotificationsController, NotificationChannelsController],
   providers: [

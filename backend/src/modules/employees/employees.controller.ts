@@ -10,6 +10,7 @@ import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
 import { EmployeesService } from './employees.service';
 import { AssignDepartmentDto } from './dto/assign-department.dto';
 import { AssignOutletDto } from './dto/assign-outlet.dto';
+import { AssignPositionPermissionDto } from './dto/assign-position-permission.dto';
 
 @ApiTags('employees')
 @ApiBearerAuth()
@@ -36,6 +37,16 @@ export class EmployeesController {
   @Delete('positions/:id') @HttpCode(HttpStatus.NO_CONTENT) @RequirePermissions('employees.manage')
   @ApiOperation({ summary: 'Deletes a position' })
   removePosition(@Param('id', ParseIntPipe) id: number) { return this.employeesService.removePosition(id); }
+
+  @Post('positions/:id/permissions') @RequirePermissions('employees.manage')
+  assignPositionPermission(@Param('id', ParseIntPipe) id: number, @Body() dto: AssignPositionPermissionDto, @CurrentUser() user: User) {
+    return this.employeesService.assignPositionPermission(id, dto.permissionId, user.id);
+  }
+
+  @Delete('positions/:id/permissions/:permissionId') @HttpCode(HttpStatus.NO_CONTENT) @RequirePermissions('employees.manage')
+  unassignPositionPermission(@Param('id', ParseIntPipe) id: number, @Param('permissionId', ParseIntPipe) permissionId: number) {
+    return this.employeesService.unassignPositionPermission(id, permissionId);
+  }
 
   // ---- Employees ----
   @Get('employees') @RequirePermissions('employees.view')

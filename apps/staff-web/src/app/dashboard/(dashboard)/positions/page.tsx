@@ -33,9 +33,7 @@ import { TableSkeleton } from "@/components/ui/skeletons"
 import { useDelayedLoading } from "@/components/ui/use-delayed-loading"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useCurrentUser } from "@/lib/auth/current-user-context"
-import { useCreatePosition, useDeletePosition, usePositions } from "@/hooks/use-employees"
-import { useAssignPermission, useRole, useRoles, useUnassignPermission } from "@/hooks/use-roles"
-import { CreateRoleDialog } from "../roles/create-role-dialog"
+import { useAssignPositionPermission, useCreatePosition, useDeletePosition, usePositions, useUnassignPositionPermission } from "@/hooks/use-employees"
 import { usePermissions, type Permission } from "@/hooks/use-permissions"
 import { createPositionSchema, type CreatePositionInput } from "@/lib/validators/employees"
 import { usePageTitle } from "@rms/ui/use-page-title"
@@ -82,7 +80,7 @@ export default function PositionsPage() {
               <TableHead>Name</TableHead>
               <TableHead>Slug</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Default role</TableHead>
+              <TableHead>Permissions</TableHead>
               <TableHead>Status</TableHead>
               {canManage && <TableHead />}
             </TableRow>
@@ -94,8 +92,8 @@ export default function PositionsPage() {
                 <TableCell>{position.slug}</TableCell>
                 <TableCell>{position.description ?? "—"}</TableCell>
                 <TableCell>
-                  {position.defaultRole ? (
-                    <Badge variant="outline">{position.defaultRole.name}</Badge>
+                  {position.permissionSlugs.length > 0 ? (
+                    <Badge variant="outline">{position.permissionSlugs.length} configured</Badge>
                   ) : (
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
@@ -107,12 +105,7 @@ export default function PositionsPage() {
                 </TableCell>
                 {canManage && (
                   <TableCell>
-                    {position.defaultRole && (
-                      <PositionPermissionsDialog
-                        roleId={position.defaultRole.id}
-                        positionName={position.name}
-                      />
-                    )}
+                    <PositionPermissionsDialog positionId={position.id} positionName={position.name} />
                     <AlertDialog>
                       <AlertDialogTrigger render={<Button variant="ghost" size="sm">Delete</Button>} />
                       <AlertDialogContent>
@@ -139,12 +132,13 @@ export default function PositionsPage() {
   )
 }
 
-function PositionPermissionsDialog({ roleId, positionName }: { roleId: number; positionName: string }) {
+function PositionPermissionsDialog({ positionId, positionName }: { positionId: number; positionName: string }) {
   const [open, setOpen] = useState(false)
-  const { data: role } = useRole(open ? roleId : 0)
   const { data: permissions } = usePermissions()
-  const assignPermission = useAssignPermission(roleId)
-  const unassignPermission = useUnassignPermission(roleId)
+  const { data: positions } = usePositions()
+  const position = positions?.find((item) => item.id === positionId)
+  const assignPermission = useAssignPositionPermission(positionId)
+  const unassignPermission = useUnassignPositionPermission(positionId)
 
   const permissionsByModule = useMemo(() => {
     const groups = new Map<string, Permission[]>()
@@ -159,7 +153,7 @@ function PositionPermissionsDialog({ roleId, positionName }: { roleId: number; p
   type AccessLevel = "none" | "view" | "full" | "enabled"
 
   function moduleAccessLevel(modulePermissions: Permission[]): AccessLevel {
-    const granted = new Set(role?.permissions ?? [])
+    const granted = new Set(position?.permissionSlugs ?? [])
     const managePermission = modulePermissions.find((permission) => permission.action === "manage")
     const viewPermission = modulePermissions.find((permission) => permission.action === "view")
     const singlePermission = modulePermissions.find((permission) => permission.action !== "view" && permission.action !== "manage")
@@ -170,8 +164,8 @@ function PositionPermissionsDialog({ roleId, positionName }: { roleId: number; p
   }
 
   async function handleModuleAccessChange(modulePermissions: Permission[], level: AccessLevel) {
-    if (!role) return
-    const granted = new Set(role.permissions ?? [])
+    if (!position) return
+    const granted = new Set(position.permissionSlugs ?? [])
     const viewPermission = modulePermissions.find((permission) => permission.action === "view")
     const managePermission = modulePermissions.find((permission) => permission.action === "manage")
     const singlePermission = modulePermissions.find((permission) => permission.action !== "view" && permission.action !== "manage")
@@ -220,7 +214,7 @@ function PositionPermissionsDialog({ roleId, positionName }: { roleId: number; p
                 <Select
                   value={moduleAccessLevel(modulePermissions)}
                   onValueChange={(value) => void handleModuleAccessChange(modulePermissions, value as AccessLevel)}
-                  disabled={!role || assignPermission.isPending || unassignPermission.isPending}
+                  disabled={!position || assignPermission.isPending || unassignPermission.isPending}
                 >
                   <SelectTrigger className="w-40"><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -242,9 +236,6 @@ function PositionPermissionsDialog({ roleId, positionName }: { roleId: number; p
 function CreatePositionDialog() {
   const [open, setOpen] = useState(false)
   const createPosition = useCreatePosition()
-  const { data: rolesPage } = useRoles({ limit: 100 })
-  const roles = rolesPage?.data ?? []
-
   const form = useForm<CreatePositionInput>({
     resolver: zodResolver(createPositionSchema),
     defaultValues: { name: "", slug: "", description: "" },
@@ -314,36 +305,6 @@ function CreatePositionDialog() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl {...field} />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="defaultRoleId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Default role</FormLabel>
-                  <Select
-                    value={field.value ? String(field.value) : "none"}
-                    onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="No default role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No default role</SelectItem>
-                      {roles.map((role) => (
-                        <SelectItem key={role.id} value={String(role.id)}>
-                          {role.name}
-                        </SelectItem>
-                      ))}
-                      <CreateRoleDialog
-                        trigger={<Button type="button" variant="ghost" className="w-full justify-start">Create role</Button>}
-                        onCreated={(role) => field.onChange(role.id)}
-                      />
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

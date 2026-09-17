@@ -17,17 +17,6 @@ export interface User {
   createdAt: string
 }
 
-export interface RoleAssignment {
-  id: number
-  roleId: number
-  roleName: string
-  roleSlug: string
-  scopeType: string
-  outletId: number | null
-  isActive: boolean
-  createdAt: string
-}
-
 export interface ListUsersParams {
   page?: number
   limit?: number
@@ -96,57 +85,3 @@ export function useDeactivateUser(id: number) {
   })
 }
 
-export function useUserRoleAssignments(userId: number) {
-  return useQuery({
-    queryKey: queryKeys.users.roleAssignments(userId),
-    queryFn: () => apiClient<RoleAssignment[]>(`/users/${userId}/role-assignments`),
-    enabled: userId > 0,
-  })
-}
-
-export function useAssignRole(userId: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (input: number | { roleId: number; outletId?: number }) => {
-      const body = typeof input === "number" ? { roleId: input } : input
-      return apiClient<void>(`/users/${userId}/role-assignments`, { method: "POST", body: JSON.stringify(body) })
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.roleAssignments(userId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.detail(userId) })
-    },
-  })
-}
-
-/** Creates the user, then immediately assigns a role if one was picked — one form action instead of "create, then go find them again to assign a role". */
-export function useCreateUserWithRole() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: async ({ roleId, ...input }: CreateUserInput & { roleId?: number }) => {
-      const user = await apiClient<User>("/users", { method: "POST", body: JSON.stringify(input) })
-      if (roleId) {
-        await apiClient<void>(`/users/${user.id}/role-assignments`, {
-          method: "POST",
-          body: JSON.stringify({ roleId }),
-        })
-      }
-      return user
-    },
-    onSuccess: (user) => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.lists() })
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.roleAssignments(user.id) })
-    },
-  })
-}
-
-export function useRevokeRoleAssignment(userId: number) {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (assignmentId: number) =>
-      apiClient<void>(`/users/${userId}/role-assignments/${assignmentId}`, { method: "DELETE" }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.roleAssignments(userId) })
-      queryClient.invalidateQueries({ queryKey: queryKeys.users.detail(userId) })
-    },
-  })
-}

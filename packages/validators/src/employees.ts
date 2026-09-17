@@ -75,7 +75,7 @@ export const createPositionSchema = z.object({
     .min(1, "Slug is required")
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
   description: z.string().optional(),
-  defaultRoleId: z.number().positive().optional(),
+  permissionIds: z.array(z.number().positive()).optional(),
 })
 
 export type CreatePositionInput = z.infer<typeof createPositionSchema>
@@ -88,7 +88,7 @@ export const updatePositionSchema = z.object({
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only")
     .optional(),
   description: z.string().optional(),
-  defaultRoleId: z.number().positive().optional(),
+  permissionIds: z.array(z.number().positive()).optional(),
 })
 
 export type UpdatePositionInput = z.infer<typeof updatePositionSchema>

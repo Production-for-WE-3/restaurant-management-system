@@ -6,28 +6,20 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcrypt';
-import { ILike, In, IsNull, QueryFailedError, Repository } from 'typeorm';
+import { ILike, In, QueryFailedError, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
 import { AppConfig } from '../../config/configuration';
-import { UserRoleAssignment } from '../roles/entities/user-role-assignment.entity';
-import { RolesService } from '../roles/roles.service';
-import { CreateRoleAssignmentDto } from './dto/create-role-assignment.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
-import { RoleAssignmentResponseDto } from './dto/role-assignment-response.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
 import { User } from './entities/user.entity';
 import { Employee } from '../employees/entities/employee.entity';
-import { Outlet } from '../outlets/entities/outlet.entity';
 
 @Injectable()
 export class UsersService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
-    @InjectRepository(UserRoleAssignment)
-    private readonly assignmentsRepository: Repository<UserRoleAssignment>,
-    private readonly rolesService: RolesService,
     private readonly configService: ConfigService<AppConfig>,
     @InjectRepository(Employee) private readonly employeesRepository: Repository<Employee>,
   ) {}
@@ -144,110 +136,13 @@ export class UsersService {
     return this.toResponse(saved, activeUserIds.has(id), employee ?? undefined);
   }
 
-  /**
-   * "Deactivating" a user means revoking every one of their role
-   * assignments — `users` has no is_active/deleted_at column, so this is
-   * how PermissionsGuard ends up denying them everything. Login stays
-   * possible; that's a deliberate trade-off, not a gap.
-   */
+  /** Deactivating a user disables the linked employee account. */
   async deactivate(id: number, tenantId?: number): Promise<void> {
     await this.getUserOrThrow(id, tenantId);
-    await this.assignmentsRepository.update(
+    await this.employeesRepository.update(
       { userId: id, isActive: true },
-      { isActive: false },
+      { isActive: false, employmentStatus: 'inactive' },
     );
-  }
-
-  async listRoleAssignments(
-    userId: number,
-    tenantId?: number,
-  ): Promise<RoleAssignmentResponseDto[]> {
-    await this.getUserOrThrow(userId, tenantId);
-    const assignments = await this.assignmentsRepository.find({
-      where: { userId },
-      relations: { role: true },
-      order: { createdAt: 'DESC' },
-    });
-
-    return assignments.map((assignment) => ({
-      id: assignment.id,
-      roleId: assignment.roleId,
-      roleName: assignment.role.name,
-      roleSlug: assignment.role.slug,
-      scopeType: assignment.scopeType,
-      outletId: assignment.outletId,
-      isActive: assignment.isActive,
-      createdAt: assignment.createdAt,
-    }));
-  }
-
-  /** Find-or-reactivate: re-assigning an already-assigned (possibly revoked) role updates the existing row instead of duplicating it. */
-  async assignRole(
-    userId: number,
-    dto: CreateRoleAssignmentDto,
-    tenantId?: number,
-  ): Promise<void> {
-    await this.getUserOrThrow(userId, tenantId);
-    const role = await this.rolesService.findOne(dto.roleId); // validates roleId, 404s if missing
-    if (!role.isAssignable) {
-      throw new ConflictException(`Role "${role.name}" cannot be assigned`);
-    }
-
-    if (dto.outletId !== undefined) {
-      const outlet = await this.assignmentsRepository.manager.getRepository(Outlet).findOne({
-        where: { id: dto.outletId, ...(tenantId !== undefined ? { tenantId } : {}) },
-      });
-      if (!outlet) {
-        throw new NotFoundException(`Outlet ${dto.outletId} not found in this tenant`);
-      }
-    }
-
-    const existing = await this.assignmentsRepository.findOne({
-      where: {
-        userId,
-        roleId: dto.roleId,
-        scopeType: dto.outletId === undefined ? 'global' : 'outlet',
-        outletId: dto.outletId === undefined ? IsNull() : dto.outletId,
-        outletDepartmentId: IsNull(),
-        warehouseId: IsNull(),
-      },
-    });
-
-    if (existing) {
-      if (!existing.isActive) {
-        existing.isActive = true;
-        await this.assignmentsRepository.save(existing);
-      }
-      return;
-    }
-
-    await this.assignmentsRepository.save(
-      this.assignmentsRepository.create({
-        userId,
-        roleId: dto.roleId,
-        scopeType: dto.outletId === undefined ? 'global' : 'outlet',
-        outletId: dto.outletId ?? null,
-        isActive: true,
-      }),
-    );
-  }
-
-  async revokeRoleAssignment(
-    userId: number,
-    assignmentId: number,
-    tenantId?: number,
-  ): Promise<void> {
-    await this.getUserOrThrow(userId, tenantId);
-    const assignment = await this.assignmentsRepository.findOne({
-      where: { id: assignmentId, userId },
-    });
-    if (!assignment) {
-      throw new NotFoundException(
-        `Role assignment ${assignmentId} not found for user ${userId}`,
-      );
-    }
-    assignment.isActive = false;
-    await this.assignmentsRepository.save(assignment);
   }
 
   private async getUserOrThrow(id: number, tenantId?: number): Promise<User> {
@@ -276,16 +171,14 @@ export class UsersService {
       return new Set();
     }
 
-    const rows = await this.assignmentsRepository.manager
+    const rows = await this.employeesRepository.manager
       .createQueryBuilder()
       .select('DISTINCT employee.user_id', 'userId')
       .from('employees', 'employee')
       .innerJoin('positions', 'position', 'position.id = employee.position_id AND position.is_active = true')
-      .innerJoin('roles', 'role', 'role.id = position.default_role_id AND role.is_active = true')
       .where('employee.user_id IN (:...userIds)', { userIds })
       .andWhere('employee.is_active = true')
       .andWhere('employee.employment_status = :employmentStatus', { employmentStatus: 'active' })
-      .andWhere('position.default_role_id IS NOT NULL')
       .getRawMany<{ userId: string }>();
 
     return new Set(rows.map((row) => parseInt(row.userId, 10)));

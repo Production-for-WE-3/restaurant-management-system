@@ -2,7 +2,6 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, IsNull, QueryFailedError, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
-import { UserRoleAssignment } from '../roles/entities/user-role-assignment.entity';
 import { User } from '../users/entities/user.entity';
 import { Attendance } from '../attendance/entities/attendance.entity';
 import { EmailService } from './channels/email.service';
@@ -27,8 +26,6 @@ export class NotificationsService {
     private readonly notificationIssuesRepository: Repository<NotificationIssue>,
     @InjectRepository(NotificationPreference)
     private readonly preferencesRepository: Repository<NotificationPreference>,
-    @InjectRepository(UserRoleAssignment)
-    private readonly userRoleAssignmentRepository: Repository<UserRoleAssignment>,
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     @InjectRepository(Attendance)
@@ -68,30 +65,33 @@ export class NotificationsService {
   }
 
   /**
-   * Resolves the recipients for a role-scoped notification: superadmins
-   * (outlet-independent) plus any user holding one of the given role slugs
-   * (e.g. 'manager', 'cashier') via an active assignment on this outlet.
+  * Resolves recipients by position slug: superadmins plus users whose
+  * active employee position matches one of the requested positions.
    */
-  async getUserIdsByRole(outletId: number, roleSlugs: string[]): Promise<number[]> {
+  async getUserIdsByPosition(outletId: number, positionSlugs: string[]): Promise<number[]> {
     const [presentSuperadmins, assignments] = await Promise.all([
       this.presentUserIds(outletId, true),
-      roleSlugs.length === 0
+      positionSlugs.length === 0
         ? Promise.resolve([])
-        : this.userRoleAssignmentRepository
-            .createQueryBuilder('assignment')
-            .innerJoin('assignment.role', 'role')
+        : this.notificationsRepository.manager
+            .createQueryBuilder()
+            .from('employees', 'employee')
+            .innerJoin('positions', 'position', 'position.id = employee.position_id')
+            .innerJoin('employee_outlet_assignments', 'assignment', 'assignment.employee_id = employee.id')
             .innerJoin(
               Attendance,
               'attendance',
-              'attendance.employee_id = assignment.user_id AND attendance.outlet_id = assignment.outlet_id',
+              'attendance.employee_id = employee.user_id AND attendance.outlet_id = assignment.outlet_id',
             )
             .where('assignment.outlet_id = :outletId', { outletId })
             .andWhere('assignment.is_active = true')
-            .andWhere('role.is_active = true')
-            .andWhere('role.slug IN (:...roleSlugs)', { roleSlugs })
+            .andWhere('employee.is_active = true')
+            .andWhere("employee.employment_status = 'active'")
+            .andWhere('position.is_active = true')
+            .andWhere('position.slug IN (:...positionSlugs)', { positionSlugs })
             .andWhere('attendance.clock_out IS NULL')
             .andWhere("attendance.status IN ('present', 'late')")
-            .select('assignment.user_id', 'userId')
+            .select('employee.user_id', 'userId')
             .getRawMany<{ userId: string }>(),
     ]);
     return [
@@ -107,20 +107,24 @@ export class NotificationsService {
     if (!outletId) return [];
     const [presentSuperadmins, assignments] = await Promise.all([
       this.presentUserIds(outletId, true),
-      this.userRoleAssignmentRepository
-        .createQueryBuilder('assignment')
-        .innerJoin('assignment.role', 'role')
+      this.notificationsRepository.manager
+        .createQueryBuilder()
+        .from('employees', 'employee')
+        .innerJoin('positions', 'position', 'position.id = employee.position_id')
+        .innerJoin('employee_outlet_assignments', 'assignment', 'assignment.employee_id = employee.id')
         .innerJoin(
           Attendance,
           'attendance',
-          'attendance.employee_id = assignment.user_id AND attendance.outlet_id = assignment.outlet_id',
+          'attendance.employee_id = employee.user_id AND attendance.outlet_id = assignment.outlet_id',
         )
         .where('assignment.outlet_id = :outletId', { outletId })
         .andWhere('assignment.is_active = true')
-        .andWhere('role.is_active = true')
+        .andWhere('employee.is_active = true')
+        .andWhere("employee.employment_status = 'active'")
+        .andWhere('position.is_active = true')
         .andWhere('attendance.clock_out IS NULL')
         .andWhere("attendance.status IN ('present', 'late')")
-        .select('assignment.user_id', 'userId')
+        .select('employee.user_id', 'userId')
         .getRawMany<{ userId: string }>(),
     ]);
     return [...new Set([
@@ -141,24 +145,24 @@ export class NotificationsService {
     return rows.map((row) => Number(row.userId));
   }
 
-  /** Creates a notification for only active holders of the requested roles. */
-  async createForRoles(
+  /** Creates a notification for only active holders of the requested positions. */
+  async createForPositions(
     outletId: number,
-    roleSlugs: string[],
+    positionSlugs: string[],
     input: Partial<Notification>,
   ): Promise<Notification> {
-    const recipientUserIds = await this.getUserIdsByRole(outletId, roleSlugs);
+    const recipientUserIds = await this.getUserIdsByPosition(outletId, positionSlugs);
     if (recipientUserIds.length === 0) {
       const issue = await this.notificationIssuesRepository.save(
         this.notificationIssuesRepository.create({
           outletId,
           notificationType: input.type ?? 'system',
           title: 'Notification has no eligible recipient',
-          reason: `No eligible user matched the configured recipient roles: ${roleSlugs.join(', ') || '(none)'}`,
+          reason: `No eligible user matched the configured recipient positions: ${positionSlugs.join(', ') || '(none)'}`,
           policyVersionId: null,
           notificationId: null,
           status: 'unresolved',
-          metadata: { roleSlugs, input },
+          metadata: { positionSlugs, input },
         }),
       );
       const superadminIds = await this.getAllSuperadminIds();
@@ -192,8 +196,8 @@ export class NotificationsService {
   }
 
   /**
-   * Fans a notification out to email/push for every user with a role
-   * assignment on the notification's outlet (or, if `recipientUserIds` is
+  * Fans a notification out to email/push for every active employee on the
+  * notification's outlet (or, if `recipientUserIds` is
    * given, only those users), filtered by their preferences. In-app (feed +
    * websocket) delivery is unaffected by this — it always happens regardless
    * of these preferences (see the callers of `create`).
@@ -213,10 +217,7 @@ export class NotificationsService {
     if (recipientUserIds) {
       userIds = recipientUserIds;
     } else {
-      const assignments = await this.userRoleAssignmentRepository.find({
-        where: { outletId: notification.outletId, isActive: true },
-      });
-      userIds = [...new Set(assignments.map((a) => a.userId))];
+      userIds = await this.getActiveStaffUserIds(notification.outletId ?? undefined);
     }
     if (userIds.length === 0) return;
 

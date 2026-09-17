@@ -3,10 +3,11 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, ILike, In, IsNull, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
 import { generateDocumentNumber } from '../../common/utils/document-number.util';
-import { UserRoleAssignment } from '../roles/entities/user-role-assignment.entity';
 import { User } from '../users/entities/user.entity';
 import { Outlet } from '../outlets/entities/outlet.entity';
 import { Position } from './entities/position.entity';
+import { PositionPermission } from './entities/position-permission.entity';
+import { Permission } from '../permissions/entities/permission.entity';
 import { Employee } from './entities/employee.entity';
 import { EmployeeDepartmentAssignment } from './entities/employee-department-assignment.entity';
 import { EmployeeOutletAssignment } from './entities/employee-outlet-assignment.entity';
@@ -23,8 +24,8 @@ export class EmployeesService {
   constructor(
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectRepository(Position) private readonly positionRepo: Repository<Position>,
-    @InjectRepository(UserRoleAssignment)
-    private readonly userRoleAssignmentRepo: Repository<UserRoleAssignment>,
+    @InjectRepository(PositionPermission) private readonly positionPermissionRepo: Repository<PositionPermission>,
+    @InjectRepository(Permission) private readonly permissionRepo: Repository<Permission>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(EmployeeDepartmentAssignment)
     private readonly departmentAssignments: Repository<EmployeeDepartmentAssignment>,
@@ -34,57 +35,54 @@ export class EmployeesService {
 
   // ---- Positions ----
   async findAllPositions(tenantId?: number): Promise<PositionResponseDto[]> {
-    const positions = await this.positionRepo.find({ where: { isActive: true, tenantId: tenantId ?? IsNull() }, order: { name: 'ASC' }, relations: ['defaultRole'] });
-    return positions.map((p) => this.toPositionResponse(p));
+    const positions = await this.positionRepo.find({ where: { isActive: true, tenantId: tenantId ?? IsNull() }, order: { name: 'ASC' } });
+    return Promise.all(positions.map((p) => this.toPositionResponse(p)));
   }
   async findPosition(id: number): Promise<Position> {
-    const p = await this.positionRepo.findOne({ where: { id }, relations: ['defaultRole'] }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
+    const p = await this.positionRepo.findOne({ where: { id } }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
   }
   async findPositionResponse(id: number): Promise<PositionResponseDto> {
     return this.toPositionResponse(await this.findPosition(id));
   }
   async createPosition(dto: CreatePositionDto, tenantId?: number): Promise<PositionResponseDto> {
-    const saved = await this.positionRepo.save(this.positionRepo.create({ ...dto, tenantId: tenantId ?? null }));
+    const { permissionIds, ...positionInput } = dto;
+    const saved = await this.positionRepo.save(this.positionRepo.create({ ...positionInput, tenantId: tenantId ?? null }));
+    await this.replacePositionPermissions(saved.id, permissionIds);
     return this.toPositionResponse(saved);
   }
   async updatePosition(id: number, dto: UpdatePositionDto): Promise<PositionResponseDto> {
-    const p = await this.findPosition(id); Object.assign(p, dto);
+    const { permissionIds, ...positionInput } = dto;
+    const p = await this.findPosition(id); Object.assign(p, positionInput);
     const saved = await this.positionRepo.save(p);
+    await this.replacePositionPermissions(saved.id, permissionIds);
     return this.toPositionResponse(saved);
   }
   async removePosition(id: number): Promise<void> {
     await this.findPosition(id); await this.positionRepo.delete(id);
   }
 
-  /**
-   * Grants the position's default role to the employee's linked user account,
-   * scoped to the employee's outlet. Only adds — never revokes a role the
-   * employee already holds, since a user may accumulate roles beyond the one
-   * implied by their position.
-   */
-  private async syncRoleFromPosition(employee: Employee): Promise<void> {
-    if (!employee.userId) return;
+  async assignPositionPermission(positionId: number, permissionId: number, createdBy: number): Promise<void> {
+    await this.findPosition(positionId);
+    const permission = await this.permissionRepo.findOne({ where: { id: permissionId, isActive: true } });
+    if (!permission) throw new NotFoundException(`Permission ${permissionId} not found`);
+    const existing = await this.positionPermissionRepo.findOne({ where: { positionId, permissionId } });
+    if (!existing) await this.positionPermissionRepo.save(this.positionPermissionRepo.create({ positionId, permissionId, createdBy }));
+  }
 
-    // Roles are derived exclusively from the employee's position. Remove any
-    // previous direct/position-derived assignments before applying the current
-    // position, so changing position cannot leave stale access behind.
-    await this.userRoleAssignmentRepo.update(
-      { userId: employee.userId, isActive: true },
-      { isActive: false },
-    );
+  async unassignPositionPermission(positionId: number, permissionId: number): Promise<void> {
+    await this.findPosition(positionId);
+    await this.positionPermissionRepo.delete({ positionId, permissionId });
+  }
 
-    if (!employee.positionId) return;
-    const position = await this.positionRepo.findOne({
-      where: { id: employee.positionId },
-      relations: ['defaultRole'],
-    });
-    if (!position?.defaultRoleId) return;
-
-    const isGlobal = position.defaultRole?.level === 'global';
-    const outletIds = isGlobal ? [null] : await this.getOutletIds(employee.id);
-    for (const outletId of outletIds) {
-      const existing = await this.userRoleAssignmentRepo.findOne({ where: { userId: employee.userId, roleId: position.defaultRoleId, scopeType: isGlobal ? 'global' : 'outlet', outletId: outletId ?? IsNull(), outletDepartmentId: IsNull(), warehouseId: IsNull() } });
-      if (!existing) await this.userRoleAssignmentRepo.save(this.userRoleAssignmentRepo.create({ userId: employee.userId, roleId: position.defaultRoleId, scopeType: isGlobal ? 'global' : 'outlet', outletId, outletDepartmentId: null }));
+  private async replacePositionPermissions(positionId: number, permissionIds?: number[]): Promise<void> {
+    if (permissionIds === undefined) return;
+    await this.positionPermissionRepo.delete({ positionId });
+    if (permissionIds.length > 0) {
+      await this.positionPermissionRepo.save(
+        [...new Set(permissionIds)].map((permissionId) =>
+          this.positionPermissionRepo.create({ positionId, permissionId, createdBy: null }),
+        ),
+      );
     }
   }
 
@@ -112,7 +110,7 @@ export class EmployeesService {
 
   /** Internal lookup — returns the raw entity (with position/defaultRole loaded) for outlet-access checks and other services. */
   async findOne(id: number): Promise<Employee> {
-    const e = await this.employeeRepo.findOne({ where: { id }, relations: ['position', 'position.defaultRole', 'user'] });
+    const e = await this.employeeRepo.findOne({ where: { id }, relations: ['position', 'user'] });
     if (!e) throw new NotFoundException(`Employee ${id} not found`); return e;
   }
 
@@ -270,21 +268,14 @@ export class EmployeesService {
     }
   }
 
-  private toPositionResponse(position: Position): PositionResponseDto {
+  private async toPositionResponse(position: Position): Promise<PositionResponseDto> {
+    const assignments = await this.positionPermissionRepo.find({ where: { positionId: position.id }, relations: ['permission'] });
     return {
       id: position.id,
       name: position.name,
       slug: position.slug,
       description: position.description,
-      defaultRoleId: position.defaultRoleId,
-      defaultRole: position.defaultRole
-        ? {
-            id: position.defaultRole.id,
-            name: position.defaultRole.name,
-            slug: position.defaultRole.slug,
-            level: position.defaultRole.level,
-          }
-        : null,
+      permissionSlugs: assignments.map((assignment) => assignment.permission.slug),
       isActive: position.isActive,
       createdAt: position.createdAt,
       updatedAt: position.updatedAt,

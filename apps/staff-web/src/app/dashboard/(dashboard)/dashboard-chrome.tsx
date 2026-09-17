@@ -20,18 +20,18 @@ import { DashboardAssistantChatbot } from "./dashboard-assistant-chatbot"
  * components) runs on the client instead of being computed in the server
  * layout and passed down as a prop — Server->Client props must be plain
  * serializable data, and icon components aren't. permissions/isSuperadmin/
- * roleSlugs are plain data, so those are what actually cross the boundary.
+ * positionSlugs are plain data, so those are what actually cross the boundary.
  */
 export function DashboardChrome({
   permissions,
   isSuperadmin,
-  roleSlugs,
+  positionSlugs,
   allowed,
   children,
 }: {
   permissions: string[]
   isSuperadmin: boolean
-  roleSlugs: string[]
+  positionSlugs: string[]
   allowed: boolean
   children: React.ReactNode
 }) {

@@ -4,12 +4,10 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
-  OneToMany,
   PrimaryColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { BigIntTransformer } from '../../../common/transformers/bigint.transformer';
-import { UserRoleAssignment } from '../../roles/entities/user-role-assignment.entity';
 import { Tenant } from '../../tenants/entities/tenant.entity';
 
 @Entity({ name: 'users' })
@@ -84,6 +82,4 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at', type: 'timestamp' })
   updatedAt: Date;
 
-  @OneToMany(() => UserRoleAssignment, (assignment) => assignment.user)
-  roleAssignments: UserRoleAssignment[];
 }

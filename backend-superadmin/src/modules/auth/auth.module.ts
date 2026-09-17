@@ -8,7 +8,7 @@ import { Attendance } from '../attendance/entities/attendance.entity';
 import { AppConfig } from '../../config/configuration';
 import { InstrumentationModule } from '../../common/instrumentation/instrumentation.module';
 import { AuditLogsModule } from '../audit-logs/audit-logs.module';
-import { RolesModule } from '../roles/roles.module';
+import { PositionPermission } from '../employees/entities/position-permission.entity';
 import { UsersModule } from '../users/users.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -24,10 +24,9 @@ import { TenantGuard } from './guards/tenant.guard';
 @Module({
   imports: [
     UsersModule,
-    RolesModule,
+    TypeOrmModule.forFeature([RefreshToken, Attendance, PositionPermission]),
     AuditLogsModule,
     InstrumentationModule,
-    TypeOrmModule.forFeature([RefreshToken, Attendance]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

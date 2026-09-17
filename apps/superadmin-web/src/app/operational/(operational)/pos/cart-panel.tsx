@@ -123,7 +123,7 @@ function EditableCart({
   const user = useCurrentUser()
   // Waiters take orders but don't collect payment — that's the cashier's
   // job at the table (see floor/table-actions-dialog for the same split).
-  const canRecordPayment = user.isSuperadmin || user.roleSlugs.includes("cashier")
+  const canRecordPayment = user.isSuperadmin || user.positionSlugs.includes("cashier")
   const localCart = useLocalCartContext()
   const addItemsBatch = useAddOrderItemsBatch(orderId)
   const addItemsBatchOverride = useAddOrderItemsBatch(orderId, { closedHoursOverride: true })

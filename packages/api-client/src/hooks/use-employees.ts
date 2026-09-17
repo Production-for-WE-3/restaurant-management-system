@@ -16,8 +16,7 @@ export interface Position {
   name: string
   slug: string
   description: string | null
-  defaultRoleId: number | null
-  defaultRole?: { id: number; name: string; slug: string; level: string } | null
+  permissionSlugs: string[]
   isActive: boolean
   createdAt: string
   updatedAt: string
@@ -162,6 +161,24 @@ export function useDeletePosition() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (id: number) => apiClient<void>(`/positions/${id}`, { method: "DELETE" }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.positions.list() }),
+  })
+}
+
+export function useAssignPositionPermission(positionId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (permissionId: number) =>
+      apiClient<void>(`/positions/${positionId}/permissions`, { method: "POST", body: JSON.stringify({ permissionId }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.positions.list() }),
+  })
+}
+
+export function useUnassignPositionPermission(positionId: number) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (permissionId: number) =>
+      apiClient<void>(`/positions/${positionId}/permissions/${permissionId}`, { method: "DELETE" }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.positions.list() }),
   })
 }

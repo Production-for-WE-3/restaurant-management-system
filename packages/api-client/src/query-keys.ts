@@ -18,13 +18,6 @@ export const queryKeys = {
     lists: () => [...queryKeys.users.all, "list"] as const,
     list: (params?: unknown) => [...queryKeys.users.lists(), params] as const,
     detail: (id: number) => [...queryKeys.users.all, "detail", id] as const,
-    roleAssignments: (id: number) => [...queryKeys.users.all, "role-assignments", id] as const,
-  },
-  roles: {
-    all: ["roles"] as const,
-    lists: () => [...queryKeys.roles.all, "list"] as const,
-    list: (params?: unknown) => [...queryKeys.roles.lists(), params] as const,
-    detail: (id: number) => [...queryKeys.roles.all, "detail", id] as const,
   },
   permissions: {
     all: ["permissions"] as const,
@@ -280,6 +273,7 @@ export const queryKeys = {
   positions: {
     all: ["positions"] as const,
     list: () => [...queryKeys.positions.all, "list"] as const,
+    detail: (id: number) => [...queryKeys.positions.all, "detail", id] as const,
   },
   employees: {
     all: ["employees"] as const,

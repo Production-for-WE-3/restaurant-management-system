@@ -9,7 +9,7 @@ import { validate } from '../../config/env.validation';
 import { EmployeesModule } from '../../modules/employees/employees.module';
 import { OutletDepartmentsModule } from '../../modules/outlet-departments/outlet-departments.module';
 import { OutletsModule } from '../../modules/outlets/outlets.module';
-import { RolesModule } from '../../modules/roles/roles.module';
+import { PermissionsModule } from '../../modules/permissions/permissions.module';
 import { UsersModule } from '../../modules/users/users.module';
 import { WarehousesModule } from '../../modules/warehouses/warehouses.module';
 
@@ -41,7 +41,7 @@ import { WarehousesModule } from '../../modules/warehouses/warehouses.module';
       },
     }),
     UsersModule,
-    RolesModule,
+    PermissionsModule,
     OutletsModule,
     OutletDepartmentsModule,
     WarehousesModule,

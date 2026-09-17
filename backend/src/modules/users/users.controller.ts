@@ -16,7 +16,6 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
-import { CreateRoleAssignmentDto } from './dto/create-role-assignment.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
@@ -101,47 +100,10 @@ export class UsersController {
   @RequirePermissions('users.manage')
   @ApiOperation({
     summary:
-      "Revokes all of a user's role assignments (login stays possible, access does not)",
+      "Disables the user's linked employee account",
   })
   deactivate(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User, @Req() request: AuthenticatedRequest & { tenantId?: number }) {
     return this.usersService.deactivate(id, this.scope(user, request));
   }
 
-  @Get(':id/role-assignments')
-  @RequirePermissions('roles.view')
-  @ApiOperation({
-    summary:
-      "Lists a user's role assignments (guarded by roles.view, not users.view)",
-  })
-  listRoleAssignments(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User, @Req() request: AuthenticatedRequest & { tenantId?: number }) {
-    return this.usersService.listRoleAssignments(id, this.scope(user, request));
-  }
-
-  @Post(':id/role-assignments')
-  @RequirePermissions('roles.manage')
-  @ApiOperation({
-    summary:
-      'Assigns a global-scope role to a user (idempotent — reactivates an existing revoked assignment instead of duplicating)',
-  })
-  assignRole(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: CreateRoleAssignmentDto,
-    @CurrentUser() user: User,
-    @Req() request: AuthenticatedRequest & { tenantId?: number },
-  ) {
-    return this.usersService.assignRole(id, dto, this.scope(user, request));
-  }
-
-  @Delete(':id/role-assignments/:assignmentId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @RequirePermissions('roles.manage')
-  @ApiOperation({ summary: 'Revokes a single role assignment' })
-  revokeRoleAssignment(
-    @Param('id', ParseIntPipe) id: number,
-    @Param('assignmentId', ParseIntPipe) assignmentId: number,
-    @CurrentUser() user: User,
-    @Req() request: AuthenticatedRequest & { tenantId?: number },
-  ) {
-    return this.usersService.revokeRoleAssignment(id, assignmentId, this.scope(user, request));
-  }
 }

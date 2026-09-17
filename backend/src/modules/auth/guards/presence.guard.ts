@@ -21,7 +21,7 @@ export class PresenceGuard implements CanActivate {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
     if (!user || user.isSuperadmin) return true;
-    if ((await this.permissionsService.getRoleSlugs(user.id)).includes('admin')) return true;
+    if ((await this.permissionsService.getPositionSlugs(user.id)).includes('admin')) return true;
     if (!this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()])?.length) return true;
     if (!user.tenantId) return true;
     const [tenant] = await this.attendanceRepo.manager.query(

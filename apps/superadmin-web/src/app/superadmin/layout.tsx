@@ -21,7 +21,7 @@ export default async function SuperadminLayout({ children }: { children: React.R
           <DashboardChrome
             permissions={user.permissions}
             isSuperadmin={user.isSuperadmin}
-            roleSlugs={user.roleSlugs}
+            positionSlugs={user.positionSlugs}
             allowed
           >
             {children}

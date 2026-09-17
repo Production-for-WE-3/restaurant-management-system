@@ -118,13 +118,6 @@ export default function SuperadminPage() {
     } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to delete outlet") }
   }
 
-  async function importRoleTemplates(tenant: Tenant) {
-    try {
-      const result = await api(`/roles/templates/import/${tenant.id}`, { method: "POST" })
-      toast.success(result?.imported?.length ? `Imported ${result.imported.length} role templates into ${tenant.name}` : `Roles are already available for ${tenant.name}`)
-    } catch (error) { toast.error(error instanceof Error ? error.message : "Failed to import role templates") }
-  }
-
   async function toggleSummary(tenant: Tenant) {
     if (expandedTenantId === tenant.id) { setExpandedTenantId(null); return }
     try {
@@ -176,7 +169,6 @@ export default function SuperadminPage() {
               <Button size="sm" variant="outline" render={<Link href={`/superadmin/tenants/${tenant.slug}`} />}>Open details</Button>
               <Button size="sm" variant="outline" onClick={() => openTenantWorkspace(tenant)}>Open workspace</Button>
               <Button size="sm" variant="outline" onClick={() => void toggleSummary(tenant)}>{expandedTenantId === tenant.id ? "Hide modules" : "View modules"}</Button>
-              <Button size="sm" variant="outline" onClick={() => void importRoleTemplates(tenant)}>Import roles</Button>
               <Button size="sm" variant="outline" onClick={() => void toggleAttendance(tenant)} disabled={updateTenant.isPending}>
                 {tenant.attendanceRequired ? "Attendance required" : "Attendance not required"}
               </Button>

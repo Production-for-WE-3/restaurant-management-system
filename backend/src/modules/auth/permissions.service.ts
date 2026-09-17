@@ -4,14 +4,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import type { Cache } from 'cache-manager';
 import { Repository } from 'typeorm';
 import { PoolMetrics } from '../../common/instrumentation/pool-metrics';
-import { UserRoleAssignment } from '../roles/entities/user-role-assignment.entity';
+import { PositionPermission } from '../employees/entities/position-permission.entity';
 
 interface ActiveAssignmentRow {
   slug: string | null;
   portal: string | null;
   outletId: string | null;
   outletDepartmentId: string | null;
-  roleSlug: string | null;
+  positionSlug: string | null;
   tenantId: string | null;
   outletTenantId: string | null;
 }
@@ -30,8 +30,8 @@ export class PermissionsService {
   private readonly logger = new Logger(PermissionsService.name);
 
   constructor(
-    @InjectRepository(UserRoleAssignment)
-    private readonly assignmentsRepository: Repository<UserRoleAssignment>,
+    @InjectRepository(PositionPermission)
+    private readonly positionPermissionRepository: Repository<PositionPermission>,
     @Inject(CACHE_MANAGER) private readonly cache: Cache,
     private readonly poolMetrics: PoolMetrics,
   ) {}
@@ -46,13 +46,13 @@ export class PermissionsService {
     }
 
     const dbStartUs = this.nowMicros();
-    const rows = await this.assignmentsRepository.manager
+    const rows = await this.positionPermissionRepository.manager
       .createQueryBuilder()
       .select('permissions.slug', 'slug')
-      .addSelect('roles.portal', 'portal')
-      .addSelect(`CASE WHEN roles.level = 'global' THEN NULL ELSE employee_assignment.outlet_id END`, 'outletId')
+      .addSelect(`'staff'`, 'portal')
+      .addSelect('employee_assignment.outlet_id', 'outletId')
       .addSelect('NULL', 'outletDepartmentId')
-      .addSelect('roles.slug', 'roleSlug')
+      .addSelect('position.slug', 'positionSlug')
       .addSelect('assigned_user.tenant_id', 'tenantId')
       .addSelect('assigned_outlet.tenant_id', 'outletTenantId')
       .from('employees', 'employee')
@@ -63,20 +63,15 @@ export class PermissionsService {
         'employee_assignment.employee_id = employee.id AND employee_assignment.is_active = true',
       )
       .innerJoin('positions', 'position', 'position.id = employee.position_id AND position.is_active = true')
-      .innerJoin(
-        'roles',
-        'roles',
-        'roles.id = position.default_role_id AND roles.is_active = true AND (roles.tenant_id = assigned_user.tenant_id OR roles.tenant_id IS NULL)',
-      )
       .leftJoin(
-        'role_permissions',
-        'role_permissions',
-        'role_permissions.role_id = roles.id',
+        'position_permissions',
+        'position_permissions',
+        'position_permissions.position_id = position.id',
       )
       .leftJoin(
         'permissions',
         'permissions',
-        'permissions.id = role_permissions.permission_id AND permissions.is_active = true',
+        'permissions.id = position_permissions.permission_id AND permissions.is_active = true',
       )
       .leftJoin(
         'outlets',
@@ -168,7 +163,7 @@ export class PermissionsService {
    * employee_outlet_assignments grants the employee's physical outlet access.
    */
   async getEmployeeAssignedOutletIds(userId: number): Promise<number[]> {
-    const rows = await this.assignmentsRepository.manager.query(
+    const rows = await this.positionPermissionRepository.manager.query(
       `SELECT DISTINCT eoa.outlet_id AS "outletId"
        FROM employees e
        INNER JOIN employee_outlet_assignments eoa
@@ -201,7 +196,7 @@ export class PermissionsService {
     if (tenantId === null || tenantId === undefined) return [];
 
     if (rows.some((row) => row.outletId === null)) {
-      const outlets = await this.assignmentsRepository.manager.query(
+      const outlets = await this.positionPermissionRepository.manager.query(
         'SELECT id FROM outlets WHERE tenant_id = $1',
         [tenantId],
       ) as Array<{ id: string }>;
@@ -225,12 +220,12 @@ export class PermissionsService {
    * purposes (e.g. narrowing the sidebar for "admin") beyond what the flat
    * permission set alone can express.
    */
-  async getRoleSlugs(userId: number): Promise<string[]> {
+  async getPositionSlugs(userId: number): Promise<string[]> {
     const rows = await this.getActiveAssignmentRows(userId);
     return [
       ...new Set(
         rows
-          .map((row) => row.roleSlug)
+          .map((row) => row.positionSlug)
           .filter((slug): slug is string => slug !== null),
       ),
     ];
@@ -256,7 +251,7 @@ export class PermissionsService {
   }
 
   async isKitchenStaff(userId: number): Promise<boolean> {
-    const rows = await this.assignmentsRepository.manager.query(
+    const rows = await this.positionPermissionRepository.manager.query(
       `SELECT 1
        FROM employees e
        LEFT JOIN positions p ON p.id = e.position_id
@@ -270,7 +265,7 @@ export class PermissionsService {
   }
 
   async getEmployeeDepartmentIds(userId: number, outletId: number): Promise<number[]> {
-    const rows = await this.assignmentsRepository.manager.query(
+    const rows = await this.positionPermissionRepository.manager.query(
       `SELECT DISTINCT department_id AS "departmentId"
        FROM (
          SELECT eda.department_id

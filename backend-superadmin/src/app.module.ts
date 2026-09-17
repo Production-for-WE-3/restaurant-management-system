@@ -60,7 +60,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { OperatingHoursModule } from './modules/operating-hours/operating-hours.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { DataImportModule } from './modules/data-import/data-import.module';
-import { RolesModule } from './modules/roles/roles.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 import { ShiftsModule } from './modules/shifts/shifts.module';
 import { StockAdjustmentsModule } from './modules/stock-adjustments/stock-adjustments.module';
 import { StockCountsModule } from './modules/stock-counts/stock-counts.module';
@@ -198,7 +198,7 @@ import { TenantsModule } from './modules/tenants/tenants.module';
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 20 }]),
     WsTicketsModule,
     UsersModule,
-    RolesModule,
+    PermissionsModule,
     OutletsModule,
     OutletDepartmentsModule,
     WarehousesModule,

@@ -44,7 +44,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <DashboardChrome
             permissions={user.permissions}
             isSuperadmin={user.isSuperadmin}
-            roleSlugs={user.roleSlugs}
+            positionSlugs={user.positionSlugs}
             allowed={allowed}
           >
             {children}

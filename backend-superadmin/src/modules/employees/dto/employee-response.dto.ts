@@ -1,20 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import type { EmploymentStatus } from '../entities/employee.entity';
 
-export class PositionDefaultRoleDto {
-  @ApiProperty()
-  id: number;
-
-  @ApiProperty()
-  name: string;
-
-  @ApiProperty()
-  slug: string;
-
-  @ApiProperty()
-  level: string;
-}
-
 export class PositionResponseDto {
   @ApiProperty()
   id: number;
@@ -28,11 +14,6 @@ export class PositionResponseDto {
   @ApiPropertyOptional({ nullable: true })
   description: string | null;
 
-  @ApiPropertyOptional({ nullable: true })
-  defaultRoleId: number | null;
-
-  @ApiPropertyOptional({ type: PositionDefaultRoleDto, nullable: true })
-  defaultRole: PositionDefaultRoleDto | null;
 
   @ApiProperty()
   isActive: boolean;

@@ -68,21 +68,6 @@ export class TenantGuard implements CanActivate {
 
     if (user.isSuperadmin) return true;
 
-    const invalidAssignments = await this.dataSource.query(
-      `SELECT COUNT(*)::int AS count
-       FROM user_role_assignments ura
-       LEFT JOIN outlets o ON o.id = ura.outlet_id
-       WHERE ura.user_id = $1
-         AND ura.is_active = true
-         AND (ura.starts_at IS NULL OR ura.starts_at <= now())
-         AND (ura.ends_at IS NULL OR ura.ends_at > now())
-         AND ura.outlet_id IS NOT NULL
-         AND (o.id IS NULL OR o.tenant_id <> $2)`,
-      [user.id, user.tenantId],
-    );
-    if (Number(invalidAssignments[0]?.count ?? 0) > 0) {
-      throw new ForbiddenException('Invalid user tenant/outlet assignment');
-    }
     return true;
   }
 }

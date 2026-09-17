@@ -66,10 +66,10 @@ export function TableActionsDialog({
   // Superadmins have unrestricted operational access, so they should see the
   // same billing/customer tools as a cashier even when they do not carry the
   // cashier role assignment themselves.
-  const isCashier = user.isSuperadmin || user.roleSlugs.includes("cashier")
+  const isCashier = user.isSuperadmin || user.positionSlugs.includes("cashier")
   // Waiters take and transfer orders but don't close out a table — that's
   // the cashier's/manager's call once payment is settled.
-  const isWaiter = !user.isSuperadmin && user.roleSlugs.includes("waiter")
+  const isWaiter = !user.isSuperadmin && user.positionSlugs.includes("waiter")
   const { data: sessions } = useTableSessions({
     diningTableId: table.id,
     status: "active",

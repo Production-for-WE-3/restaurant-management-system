@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
-import { RolesModule } from '../roles/roles.module';
 import { OutletsModule } from '../outlets/outlets.module';
 import { EmployeeDocument } from './entities/employee-document.entity';
 import { Employee } from './entities/employee.entity';
@@ -17,7 +16,6 @@ import { EmployeeOutletAssignment } from './entities/employee-outlet-assignment.
   imports: [
     TypeOrmModule.forFeature([Employee, Position, EmployeeDocument, User, EmployeeDepartmentAssignment, EmployeeOutletAssignment]),
     AuthModule,
-    RolesModule,
     OutletsModule,
   ],
   controllers: [EmployeesController],

@@ -34,7 +34,6 @@ import { useDelayedLoading } from "@/components/ui/use-delayed-loading"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useCurrentUser } from "@/lib/auth/current-user-context"
 import { useCreatePosition, useDeletePosition, usePositions } from "@/hooks/use-employees"
-import { useRoles } from "@/hooks/use-roles"
 import { createPositionSchema, type CreatePositionInput } from "@/lib/validators/employees"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
@@ -80,7 +79,7 @@ export default function PositionsPage() {
               <TableHead>Name</TableHead>
               <TableHead>Slug</TableHead>
               <TableHead>Description</TableHead>
-              <TableHead>Default role</TableHead>
+              <TableHead>Permissions</TableHead>
               <TableHead>Status</TableHead>
               {canManage && <TableHead />}
             </TableRow>
@@ -92,8 +91,8 @@ export default function PositionsPage() {
                 <TableCell>{position.slug}</TableCell>
                 <TableCell>{position.description ?? "—"}</TableCell>
                 <TableCell>
-                  {position.defaultRole ? (
-                    <Badge variant="outline">{position.defaultRole.name}</Badge>
+                  {position.permissionSlugs.length > 0 ? (
+                    <Badge variant="outline">{position.permissionSlugs.length} configured</Badge>
                   ) : (
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
@@ -134,9 +133,6 @@ export default function PositionsPage() {
 function CreatePositionDialog() {
   const [open, setOpen] = useState(false)
   const createPosition = useCreatePosition()
-  const { data: rolesPage } = useRoles({ limit: 100 })
-  const roles = rolesPage?.data ?? []
-
   const form = useForm<CreatePositionInput>({
     resolver: zodResolver(createPositionSchema),
     defaultValues: { name: "", slug: "", description: "" },
@@ -206,32 +202,6 @@ function CreatePositionDialog() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl {...field} />
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="defaultRoleId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Default role</FormLabel>
-                  <Select
-                    value={field.value ? String(field.value) : "none"}
-                    onValueChange={(v) => field.onChange(v === "none" ? undefined : Number(v))}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder="No default role" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No default role</SelectItem>
-                      {roles.map((role) => (
-                        <SelectItem key={role.id} value={String(role.id)}>
-                          {role.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

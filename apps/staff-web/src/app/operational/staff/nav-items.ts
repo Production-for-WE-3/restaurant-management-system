@@ -23,7 +23,7 @@ export interface StaffNavItem {
    * doesn't run food from the kitchen, so it's excluded here rather than by
    * introducing a new permission just for this one tab.
    */
-  excludeRoleSlugs?: string[]
+  excludePositionSlugs?: string[]
 }
 
 /** Single source of truth for what staff can reach — shared by the tab bar and the landing page so they never drift. */
@@ -48,7 +48,7 @@ export const STAFF_NAV_ITEMS: StaffNavItem[] = [
     description: "Ready-to-deliver items and call-waiter requests",
     icon: PackageCheckIcon,
     requires: "dining-tables.view",
-    excludeRoleSlugs: ["cashier"],
+    excludePositionSlugs: ["cashier"],
   },
   {
     href: "/operational/staff/prep",
@@ -56,7 +56,7 @@ export const STAFF_NAV_ITEMS: StaffNavItem[] = [
     description: "Items still being prepared or waiting to be served",
     icon: SoupIcon,
     requires: "orders.manage",
-    excludeRoleSlugs: ["waiter"],
+    excludePositionSlugs: ["waiter"],
   },
   {
     href: "/operational/staff/orders",
@@ -73,7 +73,7 @@ export const STAFF_NAV_ITEMS: StaffNavItem[] = [
     description: "Look up or add a customer",
     icon: UsersIcon,
     requires: "customers.view",
-    excludeRoleSlugs: ["waiter"],
+    excludePositionSlugs: ["waiter"],
   },
 ]
 
@@ -86,7 +86,7 @@ export const STAFF_NAV_ITEMS: StaffNavItem[] = [
 const STAFF_EXTRA_ROUTE_PERMISSIONS: {
   href: string
   permission: StaffNavItem["requires"]
-  excludeRoleSlugs?: string[]
+  excludePositionSlugs?: string[]
 }[] = [
   // /staff/pos/receipt/[orderId] — the staff-shell counterpart to
   // (operational)/pos/receipt, linked from OrderDetail's "POS Bill"/
@@ -101,27 +101,27 @@ export const staffRoutePermissions = [
 
 export function canSeeStaffNavItem(
   item: StaffNavItem,
-  user: { isSuperadmin: boolean; permissions: string[]; roleSlugs: string[] },
+  user: { isSuperadmin: boolean; permissions: string[]; positionSlugs: string[] },
 ): boolean {
   const hasRequiredPermission = hasRoutePermission(user, item.requires)
   const isExcluded =
-    !user.isSuperadmin && item.excludeRoleSlugs?.some((slug) => user.roleSlugs.includes(slug))
+    !user.isSuperadmin && item.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug))
   return hasRequiredPermission && !isExcluded
 }
 
 /** Mirrors canSeeStaffNavItem's role exclusion for the server-side route guard in layout.tsx, which only has a pathname (not a resolved nav item) to work from. */
 export function isStaffRouteBlockedForRole(
   pathname: string,
-  user: { isSuperadmin: boolean; roleSlugs: string[] },
+  user: { isSuperadmin: boolean; positionSlugs: string[] },
 ): boolean {
   if (user.isSuperadmin) return false
   return STAFF_NAV_ITEMS.some(
     (item) =>
-      item.excludeRoleSlugs?.some((slug) => user.roleSlugs.includes(slug)) &&
+      item.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug)) &&
       (pathname === item.href || pathname.startsWith(`${item.href}/`)),
   ) || STAFF_EXTRA_ROUTE_PERMISSIONS.some(
     (entry) =>
-      entry.excludeRoleSlugs?.some((slug) => user.roleSlugs.includes(slug)) &&
+      entry.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug)) &&
       (pathname === entry.href || pathname.startsWith(`${entry.href}/`)),
   )
 }

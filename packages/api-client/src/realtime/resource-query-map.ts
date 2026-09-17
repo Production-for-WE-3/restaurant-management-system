@@ -12,10 +12,8 @@ type QueryKeyPrefix = readonly unknown[]
  */
 export const RESOURCE_QUERY_MAP: Record<string, QueryKeyPrefix[]> = {
   users: [queryKeys.users.all],
-  roles: [queryKeys.roles.all],
   permissions: [queryKeys.permissions.all],
-  role_permissions: [queryKeys.roles.all],
-  user_role_assignments: [queryKeys.users.all, queryKeys.roles.all],
+  position_permissions: [queryKeys.positions.all],
   customers: [queryKeys.customers.all],
   reservations: [queryKeys.reservations.all],
   outlets: [queryKeys.outlets.all],

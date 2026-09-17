@@ -135,10 +135,9 @@ export class AuthController {
       : await this.permissionsService.hasBothPortals(user.id);
     phases['portal'] = Math.round((this.nowMicros() - portalStartUs) / 1000);
 
-    // Measure role fetch
-    const roleStartUs = this.nowMicros();
-    const roleSlugs = await this.permissionsService.getRoleSlugs(user.id);
-    phases['roles'] = Math.round((this.nowMicros() - roleStartUs) / 1000);
+    const positionStartUs = this.nowMicros();
+    const positionSlugs = await this.permissionsService.getPositionSlugs(user.id);
+    phases['positions'] = Math.round((this.nowMicros() - positionStartUs) / 1000);
 
     const meDurationMs = Math.round((this.nowMicros() - meStartUs) / 1000);
     const phaseStr = Object.entries(phases)
@@ -153,7 +152,7 @@ export class AuthController {
       permissions: Array.from(permissions),
       outletIds: [], // Defer to outlet picker fetch
       departmentIds: [], // Defer to department select fetch
-      roleSlugs,
+      positionSlugs,
     };
   }
 

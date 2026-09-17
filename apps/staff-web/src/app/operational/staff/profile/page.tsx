@@ -55,8 +55,8 @@ export default function StaffProfilePage() {
 
   const roleLabel = user.isSuperadmin
     ? "Superadmin"
-    : user.roleSlugs.length > 0
-      ? user.roleSlugs.map(titleCase).join(", ")
+    : user.positionSlugs.length > 0
+      ? user.positionSlugs.map(titleCase).join(", ")
       : "No role assigned"
 
   async function handleLogout() {
