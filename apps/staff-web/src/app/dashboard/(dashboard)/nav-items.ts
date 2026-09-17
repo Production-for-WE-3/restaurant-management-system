@@ -127,6 +127,7 @@ export const navGroupDefs: NavGroupDef[] = [
     icon: FolderOpen,
     links: [
       { href: "/dashboard/profile", label: "Profile", permission: true },
+      { href: "/dashboard/data-import", label: "Data Import", permission: true },
     ],
   },
 ]
