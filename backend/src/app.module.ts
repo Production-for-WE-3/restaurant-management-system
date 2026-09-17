@@ -30,6 +30,7 @@ import { DashboardCacheModule } from './modules/dashboard-cache/dashboard-cache.
 import { PeriodInsightsModule } from './modules/period-insights/period-insights.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { DataImportModule } from './modules/data-import/data-import.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { GoodsReceivingModule } from './modules/goods-receiving/goods-receiving.module';
 import { DiningAreasModule } from './modules/dining-areas/dining-areas.module';
@@ -244,6 +245,7 @@ import { AssetsModule } from './modules/assets/assets.module';
     BootstrapModule,
     DashboardModule,
     AnalyticsModule,
+    DataImportModule,
     DashboardCacheModule,
     PeriodInsightsModule,
     ReportsModule,
