@@ -12,7 +12,7 @@ import { BigIntTransformer } from '../../../common/transformers/bigint.transform
 import { FoodCategory } from '../../food-categories/entities/food-category.entity';
 import type { OutletDepartmentType } from '../../outlet-departments/entities/outlet-department.entity';
 
-export type FoodItemType = 'kitchen' | 'ready_made';
+export type FoodItemType = string;
 
 @Entity({ name: 'foods' })
 export class Food {

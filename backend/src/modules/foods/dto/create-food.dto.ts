@@ -17,8 +17,6 @@ import {
   type OutletDepartmentType,
 } from '../../outlet-departments/entities/outlet-department.entity';
 
-const FOOD_ITEM_TYPES: FoodItemType[] = ['kitchen', 'ready_made'];
-
 export class CreateFoodDto {
   @ApiPropertyOptional()
   @IsOptional()
@@ -66,9 +64,10 @@ export class CreateFoodDto {
   @MaxLength(1024)
   imageUrl?: string;
 
-  @ApiPropertyOptional({ enum: FOOD_ITEM_TYPES, default: 'ready_made' })
+  @ApiPropertyOptional({ default: 'ready_made' })
   @IsOptional()
-  @IsIn(FOOD_ITEM_TYPES)
+  @IsString()
+  @MaxLength(255)
   itemType?: FoodItemType = 'ready_made';
 
   @ApiPropertyOptional({
