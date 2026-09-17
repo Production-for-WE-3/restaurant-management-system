@@ -11,10 +11,12 @@ import { EmployeesImporter } from './import/employees-importer';
 import { User } from '../users/entities/user.entity';
 import { EmployeeDepartmentAssignment } from './entities/employee-department-assignment.entity';
 import { EmployeeOutletAssignment } from './entities/employee-outlet-assignment.entity';
+import { PositionPermission } from './entities/position-permission.entity';
+import { Permission } from '../permissions/entities/permission.entity';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Employee, Position, EmployeeDocument, User, EmployeeDepartmentAssignment, EmployeeOutletAssignment]),
+    TypeOrmModule.forFeature([Employee, Position, PositionPermission, Permission, EmployeeDocument, User, EmployeeDepartmentAssignment, EmployeeOutletAssignment]),
     AuthModule,
     OutletsModule,
   ],

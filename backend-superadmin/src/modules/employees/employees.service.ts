@@ -6,6 +6,8 @@ import { generateDocumentNumber } from '../../common/utils/document-number.util'
 import { User } from '../users/entities/user.entity';
 import { Outlet } from '../outlets/entities/outlet.entity';
 import { Position } from './entities/position.entity';
+import { PositionPermission } from './entities/position-permission.entity';
+import { Permission } from '../permissions/entities/permission.entity';
 import { Employee } from './entities/employee.entity';
 import { EmployeeDepartmentAssignment } from './entities/employee-department-assignment.entity';
 import { EmployeeOutletAssignment } from './entities/employee-outlet-assignment.entity';
@@ -22,6 +24,8 @@ export class EmployeesService {
   constructor(
     @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
     @InjectRepository(Position) private readonly positionRepo: Repository<Position>,
+    @InjectRepository(PositionPermission) private readonly positionPermissionRepo: Repository<PositionPermission>,
+    @InjectRepository(Permission) private readonly permissionRepo: Repository<Permission>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(EmployeeDepartmentAssignment)
     private readonly departmentAssignments: Repository<EmployeeDepartmentAssignment>,
@@ -32,7 +36,7 @@ export class EmployeesService {
   // ---- Positions ----
   async findAllPositions(tenantId?: number): Promise<PositionResponseDto[]> {
     const positions = await this.positionRepo.find({ where: { isActive: true, ...(tenantId !== undefined ? { tenantId } : {}) }, order: { name: 'ASC' } });
-    return positions.map((p) => this.toPositionResponse(p));
+    return Promise.all(positions.map((p) => this.toPositionResponse(p)));
   }
   async findPosition(id: number): Promise<Position> {
     const p = await this.positionRepo.findOne({ where: { id } }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
@@ -51,6 +55,19 @@ export class EmployeesService {
   }
   async removePosition(id: number): Promise<void> {
     await this.findPosition(id); await this.positionRepo.delete(id);
+  }
+
+  async assignPositionPermission(positionId: number, permissionId: number, createdBy: number): Promise<void> {
+    await this.findPosition(positionId);
+    const permission = await this.permissionRepo.findOne({ where: { id: permissionId, isActive: true } });
+    if (!permission) throw new NotFoundException(`Permission ${permissionId} not found`);
+    const existing = await this.positionPermissionRepo.findOne({ where: { positionId, permissionId } });
+    if (!existing) await this.positionPermissionRepo.save(this.positionPermissionRepo.create({ positionId, permissionId, createdBy }));
+  }
+
+  async unassignPositionPermission(positionId: number, permissionId: number): Promise<void> {
+    await this.findPosition(positionId);
+    await this.positionPermissionRepo.delete({ positionId, permissionId });
   }
 
   // ---- Employees ----
@@ -220,12 +237,14 @@ export class EmployeesService {
     }
   }
 
-  private toPositionResponse(position: Position): PositionResponseDto {
+  private async toPositionResponse(position: Position): Promise<PositionResponseDto> {
+    const assignments = await this.positionPermissionRepo.find({ where: { positionId: position.id }, relations: ['permission'] });
     return {
       id: position.id,
       name: position.name,
       slug: position.slug,
       description: position.description,
+      permissionSlugs: assignments.map((assignment) => assignment.permission.slug),
       isActive: position.isActive,
       createdAt: position.createdAt,
       updatedAt: position.updatedAt,

@@ -14,6 +14,8 @@ export class PositionResponseDto {
   @ApiPropertyOptional({ nullable: true })
   description: string | null;
 
+  @ApiProperty({ type: [String] })
+  permissionSlugs: string[];
 
   @ApiProperty()
   isActive: boolean;
