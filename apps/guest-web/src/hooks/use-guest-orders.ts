@@ -1,6 +1,8 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useMemo } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { io } from "socket.io-client";
 import { authFetch } from "@/lib/api";
 import { useGuestAuth } from "./use-guest-auth";
 import { publicQueryKeys } from "@rms/api-client/query-keys";
@@ -34,9 +36,14 @@ export interface GuestOrder {
  */
 export function useGuestOrders(tableCode: string | null) {
   const { isAuthenticated } = useGuestAuth();
+  const queryClient = useQueryClient();
+  const queryKey = useMemo(
+    () => publicQueryKeys.guestOrders(tableCode!),
+    [tableCode],
+  );
 
-  return useQuery<GuestOrder[]>({
-    queryKey: publicQueryKeys.guestOrders(tableCode!),
+  const query = useQuery<GuestOrder[]>({
+    queryKey,
     queryFn: async () => {
       const res = await authFetch(
         `/orders/guest/mine?tableCode=${encodeURIComponent(tableCode!)}`
@@ -46,11 +53,35 @@ export function useGuestOrders(tableCode: string | null) {
       // This endpoint returns a bare array, not the paginated {data,meta} envelope.
       return Array.isArray(data) ? data : (data.data ?? []);
     },
-    // Keeps running whatever the status — a served order can still be reopened
-    // or amended by staff, and the guest should see that.
-    refetchInterval: 5000,
-    // The endpoint runs requireVerifiedCustomerId — without a token it is a
-    // guaranteed 401, so don't poll it every 5s for nothing.
     enabled: !!tableCode && isAuthenticated,
   });
+
+  useEffect(() => {
+    if (!tableCode || !isAuthenticated) return;
+    let socket: ReturnType<typeof io> | undefined;
+    let cancelled = false;
+    void authFetch("/customer-auth/ws-ticket", { method: "POST" })
+      .then((res) => (res.ok ? res.json() as Promise<{ ticket: string }> : null))
+      .then((body) => {
+        if (cancelled || !body?.ticket) return;
+        const configuredUrl = process.env.NEXT_PUBLIC_GUEST_WS_URL;
+        const fallbackUrl =
+          process.env.NEXT_PUBLIC_GUEST_API_URL?.replace(/\/api\/customer-backend\/?$/, "") ||
+          process.env.NEXT_PUBLIC_API_URL?.replace(/\/api\/?$/, "") ||
+          window.location.origin;
+        // /kds is the Socket.IO namespace; the transport path remains the
+        // server default. The REST API's /api prefix is unrelated to WS.
+        socket = io(`${configuredUrl || fallbackUrl}/kds`, { auth: { ticket: body.ticket }, transports: ["websocket"] });
+        socket.on("guest.order.updated", () => {
+          void queryClient.invalidateQueries({ queryKey });
+        });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+      socket?.close();
+    };
+  }, [tableCode, isAuthenticated, queryClient, queryKey]);
+
+  return query;
 }

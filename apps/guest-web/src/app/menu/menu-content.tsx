@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
-import { useQuery, useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
   ShoppingCart,
   ClipboardList,
@@ -69,32 +69,15 @@ export default function MenuContent() {
   const [openSection, setOpenSection] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: foods = [], isLoading: foodsLoading } = useQuery<Food[]>({
-    queryKey: publicQueryKeys.foods(),
-    queryFn: () => getJson("/foods/public?limit=200"),
+  const { data: menu, isLoading: foodsLoading } = useQuery<{ foods: Food[]; categories: Category[]; variants: Variant[]; variantNames: ListValue[]; subVariantNames: ListValue[] }>({
+    queryKey: ["public", "menu"],
+    queryFn: () => getJson("/foods/public/menu"),
     enabled: !!tableCode,
   });
-
-  const { data: categories = [] } = useQuery<Category[]>({
-    queryKey: publicQueryKeys.categories(),
-    queryFn: () => getJson("/food-categories/public?limit=200"),
-    enabled: !!tableCode,
-  });
-
-  // The two shared option lists. Names live here; which combinations actually
-  // exist (and what they cost) lives on each food's items.
-  const { data: variantNames = [] } = useQuery<ListValue[]>({
-    queryKey: publicQueryKeys.variants(),
-    queryFn: () => getJson("/variants/public"),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!tableCode,
-  });
-  const { data: subVariantNames = [] } = useQuery<ListValue[]>({
-    queryKey: publicQueryKeys.subVariants(),
-    queryFn: () => getJson("/sub-variants/public"),
-    staleTime: 5 * 60 * 1000,
-    enabled: !!tableCode,
-  });
+  const foods = menu?.foods ?? [];
+  const categories = menu?.categories ?? [];
+  const variantNames = menu?.variantNames ?? [];
+  const subVariantNames = menu?.subVariantNames ?? [];
 
   const nameOf = useCallback(
     (rows: ListValue[], id: number | null) =>
@@ -102,31 +85,23 @@ export default function MenuContent() {
     []
   );
 
-  // /food-variants/public takes one foodId at a time, so variant-bearing foods
-  // are fetched in parallel. Prefetching (rather than loading on tap) is what
-  // lets the cards show a truthful "from" price from the sellable food items
-  // reliably its cheapest variant.
+  // Variant-bearing foods are already included in the combined public-menu
+  // response, so cards can show their cheapest sellable price immediately.
   const variantFoods = useMemo(
     () => foods.filter((f) => f.hasVariants),
     [foods]
   );
 
-  const variantResults = useQueries({
-    queries: variantFoods.map((food) => ({
-      queryKey: publicQueryKeys.foodVariants(food.id),
-      queryFn: () => getJson(`/food-variants/public?foodId=${food.id}&limit=50`),
-      staleTime: 5 * 60 * 1000,
-    })),
-  });
-
   const variantsByFood = useMemo(() => {
     const map: Record<number, Variant[]> = {};
-    variantFoods.forEach((food, i) => {
-      const data = variantResults[i]?.data as Variant[] | undefined;
-      if (data?.length) map[food.id] = data;
-    });
+    for (const variant of menu?.variants ?? []) {
+      (map[variant.foodId] ??= []).push(variant);
+    }
+    for (const food of variantFoods) {
+      if (!map[food.id]) map[food.id] = [];
+    }
     return map;
-  }, [variantFoods, variantResults]);
+  }, [menu?.variants, variantFoods]);
 
   // Every food item is orderable now — there are no non-sellable grouping rows.
   const leavesOf = useCallback(

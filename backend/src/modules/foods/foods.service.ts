@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -13,6 +14,8 @@ import {
   QueryFailedError,
   Repository,
 } from 'typeorm';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import type { Cache } from 'cache-manager';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
 import { AddonGroupsService } from '../addon-groups/addon-groups.service';
 import { FoodCategoriesService } from '../food-categories/food-categories.service';
@@ -32,6 +35,9 @@ import { FoodOutlet } from './entities/food-outlet.entity';
 import { FoodRecipe } from './entities/food-recipe.entity';
 import { Food } from './entities/food.entity';
 import { FoodVariant } from '../food-variants/entities/food-variant.entity';
+import { FoodCategory } from '../food-categories/entities/food-category.entity';
+import { Variant } from '../variants/entities/variant.entity';
+import { SubVariant } from '../variants/entities/sub-variant.entity';
 import { SkuCompositionService } from './sku-composition.service';
 import { normaliseSkuSegment } from '../../common/sku.util';
 import { TenantContext } from '../../common/tenant/tenant-context';
@@ -47,6 +53,16 @@ export interface PublicFood {
   hasAddons: boolean;
 }
 
+export interface PublicMenu {
+  foods: PublicFood[];
+  categories: { id: number; parentId: number | null; name: string }[];
+  variants: { id: number; foodId: number; variantId: number | null; subVariantId: number | null; name: string; price: number; isDefault: boolean }[];
+  variantNames: { id: number; name: string; sortOrder: number }[];
+  subVariantNames: { id: number; name: string; sortOrder: number }[];
+}
+
+const PUBLIC_MENU_TTL_MS = 60_000;
+
 @Injectable()
 export class FoodsService {
   constructor(
@@ -60,6 +76,14 @@ export class FoodsService {
     private readonly foodRecipesRepository: Repository<FoodRecipe>,
     @InjectRepository(FoodVariant)
     private readonly foodVariantsRepository: Repository<FoodVariant>,
+    @InjectRepository(FoodCategory)
+    private readonly categoriesRepository: Repository<FoodCategory>,
+    @InjectRepository(Variant)
+    private readonly variantsRepository: Repository<Variant>,
+    @InjectRepository(SubVariant)
+    private readonly subVariantsRepository: Repository<SubVariant>,
+    @Inject(CACHE_MANAGER)
+    private readonly cache: Cache,
     private readonly foodCategoriesService: FoodCategoriesService,
     private readonly outletsService: OutletsService,
     private readonly addonGroupsService: AddonGroupsService,
@@ -68,6 +92,29 @@ export class FoodsService {
     private readonly skuCompositionService: SkuCompositionService,
     private readonly tenantContext: TenantContext,
   ) {}
+
+  async findPublicMenu(): Promise<PublicMenu> {
+    const tenantId = this.tenantContext.getTenantId();
+    const key = `public-menu:${tenantId ?? 'none'}`;
+    const cached = await this.cache.get<PublicMenu>(key);
+    if (cached) return cached;
+    const [foods, categories, variants, variantNames, subVariantNames] = await Promise.all([
+      this.foodsRepository.find({ where: scopedWhere(this.tenantContext, { isActive: true }), order: { sortOrder: 'ASC', name: 'ASC' } }),
+      this.categoriesRepository.find({ where: scopedWhere(this.tenantContext, { isActive: true }), order: { sortOrder: 'ASC', name: 'ASC' } }),
+      this.foodVariantsRepository.find({ where: scopedWhere(this.tenantContext, { isActive: true }), order: { sortOrder: 'ASC', name: 'ASC' } }),
+      this.variantsRepository.find({ where: scopedWhere(this.tenantContext, { isActive: true }), order: { sortOrder: 'ASC', name: 'ASC' } }),
+      this.subVariantsRepository.find({ where: scopedWhere(this.tenantContext, { isActive: true }), order: { sortOrder: 'ASC', name: 'ASC' } }),
+    ]);
+    const menu = {
+      foods: foods.map(({ id, foodCategoryId, name, shortDescription, imageUrl, hasVariants, hasAddons }) => ({ id, foodCategoryId, name, shortDescription, imageUrl, hasVariants, hasAddons })),
+      categories: categories.map(({ id, parentId, name }) => ({ id, parentId, name })),
+      variants: variants.map(({ id, foodId, variantId, subVariantId, name, price, isDefault }) => ({ id, foodId, variantId, subVariantId, name, price, isDefault })),
+      variantNames: variantNames.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
+      subVariantNames: subVariantNames.map(({ id, name, sortOrder }) => ({ id, name, sortOrder })),
+    };
+    await this.cache.set(key, menu, PUBLIC_MENU_TTL_MS);
+    return menu;
+  }
 
   /** Bulk name lookup for display-only consumers (e.g. order item rows) that need many foods by id without a full findAll roundtrip. */
   async findByIds(ids: number[]): Promise<Food[]> {

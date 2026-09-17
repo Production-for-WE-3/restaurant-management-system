@@ -696,20 +696,26 @@ export class OrdersService {
       take: 20,
     });
 
-    return Promise.all(
-      orders.map(async (order) => {
-        // Loads food/foodVariant here (unlike the staff order-detail flow,
-        // which looks names up client-side from an already-loaded foods
-        // list) — the guest item tracker has no such list mounted, so the
-        // name has to travel with the item.
-        const items = await this.orderItemsRepository.find({
-          where: { orderId: order.id },
+    // One batched projection for all order items, rather than one query per
+    // order. Guest tracking only needs food/variant names; addons and stock
+    // reservations are intentionally excluded from this read model.
+    const allItems = orders.length
+      ? await this.orderItemsRepository.find({
+          where: { orderId: In(orders.map((order) => order.id)) },
           relations: ['food', 'foodVariant'],
           order: { createdAt: 'ASC' },
-        });
-        return { ...order, items: await this.attachItemRelations(items) };
-      }),
-    );
+        })
+      : [];
+    const itemsByOrder = new Map<number, OrderItem[]>();
+    for (const item of allItems) {
+      const items = itemsByOrder.get(item.orderId) ?? [];
+      items.push(item);
+      itemsByOrder.set(item.orderId, items);
+    }
+    return orders.map((order) => ({
+      ...order,
+      items: itemsByOrder.get(order.id) ?? [],
+    })) as (Order & { items: OrderItemWithRelations[] })[];
   }
 
   async update(id: number, dto: UpdateOrderDto): Promise<Order> {

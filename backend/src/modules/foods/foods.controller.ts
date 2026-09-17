@@ -56,6 +56,12 @@ export class FoodsController {
     return this.foodsService.findAllPublic(query);
   }
 
+  @Public()
+  @Get('public/menu')
+  findPublicMenu() {
+    return this.foodsService.findPublicMenu();
+  }
+
   @Get(':id')
   @RequirePermissions('foods.view')
   @ApiOperation({ summary: 'Gets a food' })

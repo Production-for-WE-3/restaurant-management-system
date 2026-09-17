@@ -305,11 +305,11 @@ export class TableSessionsService {
     if (!session.customerId) {
       session.customerId = customerId;
     }
-    const members = await this.listCustomers(id);
-    session.guestCount = Math.max(members.length, 1);
+    const memberCount = await this.sessionCustomersRepository.count({ where: { tableSessionId: id } });
+    session.guestCount = Math.max(memberCount, 1);
     await this.tableSessionsRepository.save(session);
     await this.customersService.upsertVisit(customerId, session.outletId);
-    return members;
+    return this.listCustomers(id);
   }
 
   async removeCustomer(id: number, customerId: number): Promise<TableSessionCustomerSummary[]> {
@@ -318,10 +318,10 @@ export class TableSessionsService {
       throw new BadRequestException('The primary customer cannot be removed from a table session');
     }
     await this.sessionCustomersRepository.delete({ tableSessionId: id, customerId });
-    const members = await this.listCustomers(id);
-    session.guestCount = Math.max(members.length, 1);
+    const memberCount = await this.sessionCustomersRepository.count({ where: { tableSessionId: id } });
+    session.guestCount = Math.max(memberCount, 1);
     await this.tableSessionsRepository.save(session);
-    return members;
+    return this.listCustomers(id);
   }
 
   private async attachCustomerToOrders(tableSessionId: number, customerId: number): Promise<void> {

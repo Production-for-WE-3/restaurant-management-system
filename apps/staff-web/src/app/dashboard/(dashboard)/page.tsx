@@ -158,9 +158,18 @@ export default function DashboardPage() {
 	usePageTitle("Dashboard");
 	const { outletId, isLoadingOutlets } = useActiveOutlet();
 	const enabled = !isLoadingOutlets && outletId !== null;
+	const todayKey = now.toDateString();
+
 	const range = useMemo(
-		() => ({ outletId: outletId ?? undefined, dateFrom: today(), dateTo: today() }),
-		[outletId, now.toDateString()],
+		() => {
+			void todayKey;
+			return {
+				outletId: outletId ?? undefined,
+				dateFrom: today(),
+				dateTo: today(),
+			};
+		},
+		[outletId, todayKey],
 	);
 	const stats = useDashboardStats(range, { enabled });
 	const charts = useDashboardCharts(range, { enabled });
@@ -280,7 +289,7 @@ export default function DashboardPage() {
 							<span>{money(maxRevenue * 0.75)}</span>
 							<span>{money(maxRevenue * 0.5)}</span>
 							<span>{money(maxRevenue * 0.25)}</span>
-							<span>$0</span>
+							<span>NPR 0</span>
 						</div>
 						<svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-label="Sales overview chart">
 							<defs>

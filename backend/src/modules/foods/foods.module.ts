@@ -11,6 +11,9 @@ import { FoodOutlet } from './entities/food-outlet.entity';
 import { FoodRecipe } from './entities/food-recipe.entity';
 import { Food } from './entities/food.entity';
 import { FoodVariant } from '../food-variants/entities/food-variant.entity';
+import { FoodCategory } from '../food-categories/entities/food-category.entity';
+import { Variant } from '../variants/entities/variant.entity';
+import { SubVariant } from '../variants/entities/sub-variant.entity';
 import { FoodsController } from './foods.controller';
 import { FoodsService } from './foods.service';
 import { SkuCompositionService } from './sku-composition.service';
@@ -18,7 +21,7 @@ import { FoodsImporter } from './import/foods-importer';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Food, FoodOutlet, FoodAddonGroup, FoodRecipe, FoodVariant]),
+    TypeOrmModule.forFeature([Food, FoodOutlet, FoodAddonGroup, FoodRecipe, FoodVariant, FoodCategory, Variant, SubVariant]),
     AuthModule,
     FoodCategoriesModule,
     OutletsModule,
