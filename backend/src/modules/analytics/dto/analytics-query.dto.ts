@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
 
 export class AnalyticsQueryDto {
   @ApiPropertyOptional({ description: 'Optional requested outlet; access is always checked server-side.' })
@@ -41,4 +41,12 @@ export class AnalyticsQueryDto {
   @IsOptional()
   @Transform(({ value }) => value === true || value === 'true')
   includeDomains?: boolean;
+
+  @ApiPropertyOptional({ description: 'Maximum rows returned per domain report. Totals are unaffected.' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5000)
+  domainLimit?: number;
 }

@@ -185,7 +185,7 @@ export default function DashboardPage() {
 	);
 	const tables = useDiningTables({ outletId: outletId ?? undefined, limit: 100 }, { enabled });
 	const kitchen = useKdsBootstrap(outletId);
-	const analytics = useAnalyticsDashboard(range, { enabled });
+	const analytics = useAnalyticsDashboard({ ...range, domainLimit: 1 }, { enabled });
 	const queries = [stats, charts, orders, tables, kitchen, analytics];
 	const coreQueries = [stats, charts, orders, tables];
 	const retry = () => queries.forEach((query) => void query.refetch());

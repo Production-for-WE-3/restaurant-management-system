@@ -70,6 +70,7 @@ export interface AnalyticsParams extends DashboardParams {
   orderSource?: string
   orderType?: string
   includeDomains?: boolean
+  domainLimit?: number
 }
 
 export interface OverviewAnalytics {
@@ -96,7 +97,7 @@ export interface AnalyticsDailyResponse {
 }
 
 function analyticsParams(params: AnalyticsParams) {
-  return toQueryString({ outletId: params.outletId ?? undefined, departmentId: params.departmentId ?? undefined, from: params.dateFrom, to: params.dateTo, orderSource: params.orderSource, orderType: params.orderType, includeDomains: params.includeDomains })
+  return toQueryString({ outletId: params.outletId ?? undefined, departmentId: params.departmentId ?? undefined, from: params.dateFrom, to: params.dateTo, orderSource: params.orderSource, orderType: params.orderType, includeDomains: params.includeDomains, domainLimit: params.domainLimit })
 }
 
 export function useAnalyticsOverview(params: AnalyticsParams, options?: DashboardQueryOptions) {

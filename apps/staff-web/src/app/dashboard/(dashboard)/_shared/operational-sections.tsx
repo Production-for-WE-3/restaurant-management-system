@@ -662,7 +662,7 @@ export const QUICK_ACTIONS: QuickAction[] = [
 ]
 
 export function DomainTodaySection({ outletId, enabled }: OperationalSectionProps) {
-  const query = useAnalyticsDashboard({ outletId, dateFrom: todayDashboardRange().dateFrom, dateTo: todayDashboardRange().dateTo }, { enabled })
+  const query = useAnalyticsDashboard({ outletId, dateFrom: todayDashboardRange().dateFrom, dateTo: todayDashboardRange().dateTo, domainLimit: 1 }, { enabled })
   if (query.isLoading) return <Card><CardContent className="py-8 text-center text-sm text-muted-foreground">Loading today&apos;s domain activity…</CardContent></Card>
   if (query.isError) return <Card><CardContent><SectionError onRetry={() => void query.refetch()} /></CardContent></Card>
   if (!query.data) return null
