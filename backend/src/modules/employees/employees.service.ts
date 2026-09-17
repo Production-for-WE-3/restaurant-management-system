@@ -275,6 +275,7 @@ export class EmployeesService {
       name: position.name,
       slug: position.slug,
       description: position.description,
+      portal: position.portal,
       permissionSlugs: assignments.map((assignment) => assignment.permission.slug),
       isActive: position.isActive,
       createdAt: position.createdAt,

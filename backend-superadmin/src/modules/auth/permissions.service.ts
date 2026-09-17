@@ -49,7 +49,7 @@ export class PermissionsService {
     const rows = await this.positionPermissionRepository.manager
       .createQueryBuilder()
       .select('permissions.slug', 'slug')
-      .addSelect(`'staff'`, 'portal')
+      .addSelect('position.portal', 'portal')
       .addSelect('employee_assignment.outlet_id', 'outletId')
       .addSelect('NULL', 'outletDepartmentId')
       .addSelect('position.slug', 'positionSlug')

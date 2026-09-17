@@ -87,6 +87,7 @@ export default function PositionsPage() {
               <TableHead>Slug</TableHead>
               <TableHead>Description</TableHead>
               <TableHead>Permissions</TableHead>
+              <TableHead>App</TableHead>
               <TableHead>Status</TableHead>
               {canManage && <TableHead />}
             </TableRow>
@@ -104,6 +105,7 @@ export default function PositionsPage() {
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
                 </TableCell>
+                <TableCell className="capitalize">{position.portal === "both" ? "Dashboard + Operational" : position.portal}</TableCell>
                 <TableCell>
                   <Badge variant={position.isActive ? "secondary" : "outline"}>
                     {position.isActive ? "active" : "inactive"}
@@ -309,6 +311,24 @@ function CreatePositionDialog() {
                 <FormItem>
                   <FormLabel>Description</FormLabel>
                   <FormControl {...field} />
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="portal"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>App access</FormLabel>
+                  <Select value={field.value ?? "staff"} onValueChange={field.onChange}>
+                    <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="staff">Operational</SelectItem>
+                      <SelectItem value="dashboard">Dashboard</SelectItem>
+                      <SelectItem value="both">Dashboard + Operational</SelectItem>
+                    </SelectContent>
+                  </Select>
                   <FormMessage />
                 </FormItem>
               )}

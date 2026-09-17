@@ -13,6 +13,8 @@ export class Position {
   tenantId: number | null;
   @Column({ type: 'text', nullable: true })
   description: string | null;
+  @Column({ type: 'varchar', length: 20, default: 'staff' })
+  portal: 'dashboard' | 'staff' | 'both';
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })

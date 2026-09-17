@@ -75,6 +75,7 @@ export const createPositionSchema = z.object({
     .min(1, "Slug is required")
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only"),
   description: z.string().optional(),
+  portal: z.enum(["dashboard", "staff", "both"]).optional(),
   permissionIds: z.array(z.number().positive()).optional(),
 })
 
@@ -88,6 +89,7 @@ export const updatePositionSchema = z.object({
     .regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers, and hyphens only")
     .optional(),
   description: z.string().optional(),
+  portal: z.enum(["dashboard", "staff", "both"]).optional(),
   permissionIds: z.array(z.number().positive()).optional(),
 })
 

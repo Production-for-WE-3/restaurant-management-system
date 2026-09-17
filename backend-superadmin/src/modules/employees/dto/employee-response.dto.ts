@@ -13,6 +13,8 @@ export class PositionResponseDto {
 
   @ApiPropertyOptional({ nullable: true })
   description: string | null;
+  @ApiProperty({ enum: ['dashboard', 'staff', 'both'] })
+  portal: 'dashboard' | 'staff' | 'both';
 
   @ApiProperty({ type: [String] })
   permissionSlugs: string[];

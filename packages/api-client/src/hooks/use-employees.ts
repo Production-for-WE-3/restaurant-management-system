@@ -16,6 +16,7 @@ export interface Position {
   name: string
   slug: string
   description: string | null
+  portal: "dashboard" | "staff" | "both"
   permissionSlugs: string[]
   isActive: boolean
   createdAt: string
