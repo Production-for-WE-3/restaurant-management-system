@@ -62,9 +62,18 @@ export interface PortalCheckable {
    * inferred from its permission set — it has to be this explicit value.
    */
   portal: "dashboard" | "staff"
+  /** Whether the user can reach both apps. When true, the default landing
+   * should still be the dashboard shell; the operational app remains a valid
+   * override only for explicit app navigation or when the user has no dashboard
+   * access at all.
+   */
+  hasBothPortals?: boolean
 }
 
 /** Where "/" should land a signed-in user. */
 export function getLandingPath(user: PortalCheckable): "/dashboard" | "/staff" {
-  return user.isSuperadmin || user.portal === "dashboard" ? "/dashboard" : "/staff"
+  if (user.isSuperadmin || user.portal === "dashboard" || user.hasBothPortals) {
+    return "/dashboard"
+  }
+  return "/staff"
 }
