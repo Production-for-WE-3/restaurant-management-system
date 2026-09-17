@@ -64,7 +64,7 @@ export class RolesService {
     return { ...role, permissions };
   }
 
-  async create(dto: CreateRoleDto): Promise<Role> {
+  async create(dto: CreateRoleDto, tenantId?: number): Promise<Role> {
     const role = this.rolesRepository.create({
       name: dto.name,
       slug: dto.slug,
@@ -75,6 +75,7 @@ export class RolesService {
       portal: dto.portal ?? 'dashboard',
       isSystem: false,
       description: dto.description ?? null,
+      tenantId: tenantId ?? null,
     });
 
     try {

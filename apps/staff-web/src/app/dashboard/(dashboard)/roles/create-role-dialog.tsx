@@ -17,9 +17,17 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useCreateRole } from "@/hooks/use-roles"
+import type { Role } from "@/hooks/use-roles"
 import { createRoleSchema, type CreateRoleInput } from "@/lib/validators/roles"
+import type { ReactElement } from "react"
 
-export function CreateRoleDialog() {
+export function CreateRoleDialog({
+  trigger,
+  onCreated,
+}: {
+  trigger?: ReactElement
+  onCreated?: (role: Role) => void
+}) {
   const [open, setOpen] = useState(false)
   const createRole = useCreateRole()
 
@@ -30,8 +38,9 @@ export function CreateRoleDialog() {
 
   async function onSubmit(values: CreateRoleInput) {
     try {
-      await createRole.mutateAsync(values)
+      const role = await createRole.mutateAsync(values)
       toast.success(`Role "${values.name}" created`)
+      onCreated?.(role)
       form.reset()
       setOpen(false)
     } catch (error) {
@@ -41,7 +50,7 @@ export function CreateRoleDialog() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button>Create role</Button>} />
+      <DialogTrigger render={trigger ?? <Button>Create role</Button>} />
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Create role</DialogTitle>

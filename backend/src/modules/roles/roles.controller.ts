@@ -45,9 +45,9 @@ export class RolesController {
 
   @Post()
   @RequirePermissions('roles.manage')
-  @ApiOperation({ summary: 'Creates a custom global-scope role' })
-  create(@Body() dto: CreateRoleDto) {
-    return this.rolesService.create(dto);
+  @ApiOperation({ summary: 'Creates a custom tenant role' })
+  create(@Body() dto: CreateRoleDto, @Req() request: AuthenticatedRequest & { tenantId?: number }) {
+    return this.rolesService.create(dto, request.tenantId ?? request.user?.tenantId ?? undefined);
   }
 
   @Patch(':id')

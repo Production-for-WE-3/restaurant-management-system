@@ -35,6 +35,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { useCurrentUser } from "@/lib/auth/current-user-context"
 import { useCreatePosition, useDeletePosition, usePositions } from "@/hooks/use-employees"
 import { useAssignPermission, useRole, useRoles, useUnassignPermission } from "@/hooks/use-roles"
+import { CreateRoleDialog } from "../roles/create-role-dialog"
 import { usePermissions, type Permission } from "@/hooks/use-permissions"
 import { createPositionSchema, type CreatePositionInput } from "@/lib/validators/employees"
 import { usePageTitle } from "@rms/ui/use-page-title"
@@ -337,6 +338,10 @@ function CreatePositionDialog() {
                           {role.name}
                         </SelectItem>
                       ))}
+                      <CreateRoleDialog
+                        trigger={<Button type="button" variant="ghost" className="w-full justify-start">Create role</Button>}
+                        onCreated={(role) => field.onChange(role.id)}
+                      />
                     </SelectContent>
                   </Select>
                   <FormMessage />
