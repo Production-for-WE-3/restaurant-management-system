@@ -19,6 +19,14 @@ async function main(): Promise<void> {
 
   await client.connect();
   try {
+    const result = await client.query<{ exists: boolean }>(
+      `SELECT to_regclass('public.roles') IS NOT NULL AS exists`,
+    );
+    if (!result.rows[0]?.exists) {
+      console.log('Legacy role tables are already removed; compatibility cleanup skipped.');
+      return;
+    }
+
     await client.query(`
       ALTER TABLE roles DROP CONSTRAINT IF EXISTS roles_slug_unique;
       DROP INDEX IF EXISTS roles_slug_unique;
