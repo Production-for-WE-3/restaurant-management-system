@@ -44,6 +44,19 @@ import { usePermissions, type Permission } from "@/hooks/use-permissions"
 import { createPositionSchema, type CreatePositionInput } from "@/lib/validators/employees"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
+function normalizePortalValue(portal?: string | null): "dashboard" | "staff" | "both" {
+  if (portal === "operational") return "staff"
+  if (portal === "dashboard" || portal === "staff" || portal === "both") return portal
+  return "staff"
+}
+
+function formatPortalLabel(portal?: string | null) {
+  const normalized = normalizePortalValue(portal)
+  if (normalized === "both") return "Dashboard + Operational"
+  if (normalized === "dashboard") return "Dashboard"
+  return "Operational"
+}
+
 export default function PositionsPage() {
   const { permissions, isSuperadmin } = useCurrentUser()
   const canManage = isSuperadmin || permissions.includes("employees.manage")
@@ -105,7 +118,7 @@ export default function PositionsPage() {
                     <span className="text-sm text-muted-foreground">—</span>
                   )}
                 </TableCell>
-                <TableCell className="capitalize">{position.portal === "both" ? "Dashboard + Operational" : position.portal}</TableCell>
+                <TableCell>{formatPortalLabel(position.portal)}</TableCell>
                 <TableCell>
                   <Badge variant={position.isActive ? "secondary" : "outline"}>
                     {position.isActive ? "active" : "inactive"}
@@ -321,7 +334,7 @@ function CreatePositionDialog() {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel>App access</FormLabel>
-                  <Select value={field.value ?? "staff"} onValueChange={field.onChange}>
+                  <Select value={normalizePortalValue(field.value)} onValueChange={field.onChange}>
                     <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="staff">Operational</SelectItem>
