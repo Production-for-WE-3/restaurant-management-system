@@ -110,10 +110,6 @@ export class AuthController {
     const meStartUs = this.nowMicros();
     const phases: Record<string, number> = {};
 
-    // Fetch the user's outlet IDs with the initial authenticated user payload so
-    // the client can select an outlet before the outlet details query finishes.
-
-    // Measure permission fetch
     const permStartUs = this.nowMicros();
     const permissions = await this.permissionsService.getPermissionSlugs(
       user.id,
@@ -210,11 +206,6 @@ export class AuthController {
     return { ok: true };
   }
 
-  // Includes `portal` (same resolution as /auth/me) so the login response
-  // alone is enough for the client to pick its landing app, without a
-  // separate /auth/me round trip just to make that decision. `me()` already
-  // resolves portal itself (alongside permissions/outlets/roles in one
-  // Promise.all) and passes it in to avoid resolving it twice.
   private async toAuthUser(
     user: User,
     portal?: 'dashboard' | 'staff',

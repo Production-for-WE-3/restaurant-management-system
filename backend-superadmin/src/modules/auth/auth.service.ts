@@ -214,31 +214,35 @@ export class AuthService {
   }
 
   private async issueTokenPair(user: User): Promise<TokenPair> {
-    const accessToken = await this.jwtService.signAsync({
+  const jwtConfig = this.configService.get('jwt', { infer: true })!;
+
+  const accessToken = await this.jwtService.signAsync(
+    {
       sub: user.id,
       email: user.email,
       isSuperadmin: user.isSuperadmin,
-    });
+    },
+    {
+      expiresIn:
+        jwtConfig.accessExpiresIn as unknown as JwtSignOptions['expiresIn'],
+    },
+  );
 
-    const rawRefreshToken = randomBytes(48).toString('hex');
-    const refreshExpiresIn = this.configService.get('jwt', {
-      infer: true,
-    })!.refreshExpiresIn;
+  const rawRefreshToken = randomBytes(48).toString('hex');
 
-    // .insert() instead of .create()+.save(): same entity listeners/
-    // subscribers run either way (TypeORM's InsertQueryBuilder calls them
-    // regardless — see callListeners, on by default), but .insert() skips
-    // the transaction .save() wraps a single new entity in (useTransaction
-    // defaults to false for .insert(), true for .save()), cutting 3 network
-    // round trips down to 1 on this remote DB.
-    await this.refreshTokensRepository.insert({
-      userId: user.id,
-      tokenHash: this.hashToken(rawRefreshToken),
-      expiresAt: new Date(Date.now() + parseDurationToMs(refreshExpiresIn)),
-    });
+  await this.refreshTokensRepository.insert({
+    userId: user.id,
+    tokenHash: this.hashToken(rawRefreshToken),
+    expiresAt: new Date(
+      Date.now() + parseDurationToMs(jwtConfig.refreshExpiresIn),
+    ),
+  });
 
-    return { accessToken, refreshToken: rawRefreshToken };
-  }
+  return {
+    accessToken,
+    refreshToken: rawRefreshToken,
+  };
+}
 
   private hashToken(rawToken: string): string {
     return createHash('sha256').update(rawToken).digest('hex');
