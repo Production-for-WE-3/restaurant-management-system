@@ -8,6 +8,7 @@ import { PositionPermission } from '../employees/entities/position-permission.en
 
 interface ActiveAssignmentRow {
   slug: string | null;
+  module: string | null;
   portal: string | null;
   outletId: string | null;
   outletDepartmentId: string | null;
@@ -49,6 +50,7 @@ export class PermissionsService {
     const rows = await this.positionPermissionRepository.manager
       .createQueryBuilder()
       .select('permissions.slug', 'slug')
+      .addSelect('permissions.module', 'module')
       .addSelect('position.portal', 'portal')
       .addSelect('employee_assignment.outlet_id', 'outletId')
       .addSelect('NULL', 'outletDepartmentId')
@@ -151,9 +153,20 @@ export class PermissionsService {
     }
   }
 
+  private portalFromRow(row: ActiveAssignmentRow): 'dashboard' | 'staff' | 'both' {
+    const explicit = this.normalizePortal(row.portal);
+    if (explicit === 'dashboard' || explicit === 'both') return explicit;
+
+    const hasDashboardPermission =
+      row.module === 'dashboard' || row.slug?.startsWith('dashboard.') || row.slug === 'dashboard.view';
+
+    if (hasDashboardPermission) return 'dashboard';
+    return explicit;
+  }
+
   async getPortalAccess(userId: number): Promise<'dashboard' | 'staff'> {
     const rows = await this.getActiveAssignmentRows(userId);
-    const portals = new Set(rows.map((row) => this.normalizePortal(row.portal)));
+    const portals = new Set(rows.map((row) => this.portalFromRow(row)));
     if (portals.size === 0) return 'staff';
     return portals.has('dashboard') || portals.has('both')
       ? 'dashboard'
@@ -168,7 +181,7 @@ export class PermissionsService {
    */
   async hasBothPortals(userId: number): Promise<boolean> {
     const rows = await this.getActiveAssignmentRows(userId);
-    const portals = new Set(rows.map((row) => this.normalizePortal(row.portal)));
+    const portals = new Set(rows.map((row) => this.portalFromRow(row)));
     return (
       portals.has('both') || (portals.has('dashboard') && portals.has('staff'))
     );
