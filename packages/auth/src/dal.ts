@@ -14,8 +14,8 @@ export interface CurrentUser {
   permissions: string[]
   /** Slugs of every active position linked to this user. */
   positionSlugs: string[]
-  /** Which app this user lands in after login. */
-  portal: "dashboard" | "staff"
+  /** Which app this user lands in after login. Legacy values may still appear as "operational" until the backend data is cleaned up. */
+  portal: "dashboard" | "staff" | "operational"
   /** Whether the user can reach both the dashboard and staff apps — drives the header portal switcher. */
   hasBothPortals: boolean
   /** Outlets this user's active employee assignments provide access to. */

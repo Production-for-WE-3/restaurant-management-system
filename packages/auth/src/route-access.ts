@@ -57,11 +57,10 @@ export interface PortalCheckable {
   /**
    * Which app the backend resolved this user into, aggregated server-side
    * (see PermissionsService#getPortalAccess) from the explicit `portal` field
-   * on each of the user's active role assignments. Permissions are fully
-   * admin-configurable per role, so which app a role belongs to can't be
-   * inferred from its permission set — it has to be this explicit value.
+   * on each of the user's active role assignments. Legacy values may still
+   * come through as "operational" until the DB is fully normalized.
    */
-  portal: "dashboard" | "staff"
+  portal: "dashboard" | "staff" | "operational"
   /** Whether the user can reach both apps. When true, the default landing
    * should still be the dashboard shell; the operational app remains a valid
    * override only for explicit app navigation or when the user has no dashboard
@@ -72,7 +71,8 @@ export interface PortalCheckable {
 
 /** Where "/" should land a signed-in user. */
 export function getLandingPath(user: PortalCheckable): "/dashboard" | "/staff" {
-  if (user.isSuperadmin || user.portal === "dashboard" || user.hasBothPortals) {
+  const normalizedPortal = user.portal === "operational" ? "staff" : user.portal
+  if (user.isSuperadmin || normalizedPortal === "dashboard" || user.hasBothPortals) {
     return "/dashboard"
   }
   return "/staff"

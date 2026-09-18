@@ -138,9 +138,22 @@ export class PermissionsService {
    * with no active role assignment yet default to 'staff' (the safer, more
    * restricted landing).
    */
+  private normalizePortal(portal: string | null | undefined): 'dashboard' | 'staff' | 'both' {
+    switch (portal) {
+      case 'dashboard':
+      case 'staff':
+      case 'both':
+        return portal;
+      case 'operational':
+        return 'staff';
+      default:
+        return 'staff';
+    }
+  }
+
   async getPortalAccess(userId: number): Promise<'dashboard' | 'staff'> {
     const rows = await this.getActiveAssignmentRows(userId);
-    const portals = new Set(rows.map((row) => row.portal));
+    const portals = new Set(rows.map((row) => this.normalizePortal(row.portal)));
     if (portals.size === 0) return 'staff';
     return portals.has('dashboard') || portals.has('both')
       ? 'dashboard'
@@ -155,7 +168,7 @@ export class PermissionsService {
    */
   async hasBothPortals(userId: number): Promise<boolean> {
     const rows = await this.getActiveAssignmentRows(userId);
-    const portals = new Set(rows.map((row) => row.portal));
+    const portals = new Set(rows.map((row) => this.normalizePortal(row.portal)));
     return (
       portals.has('both') || (portals.has('dashboard') && portals.has('staff'))
     );
