@@ -69,12 +69,16 @@ const HEADER_ALIASES: Record<string, string> = {
   subvariation: 'subVariant',
 };
 
+const FOOD_SLUG_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
+
 function slugify(name: string): string {
   return name
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/[^a-z0-9.]+/g, '-')
+    .replace(/^[.-]+|[.-]+$/g, '')
+    .replace(/--+/g, '-')
+    .replace(/\.\.+/g, '.');
 }
 
 function firstImageUrl(raw: string): string {
@@ -179,8 +183,8 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
 
       let slug = raw.slug?.trim().toLowerCase() ?? '';
       if (!slug) slug = slugify(name);
-      if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(slug)) {
-        errors.push('Slug must be lowercase, alphanumeric, hyphen-separated');
+      if (!FOOD_SLUG_PATTERN.test(slug)) {
+        errors.push('Slug must be lowercase, alphanumeric, dot or hyphen-separated');
       } else if (existingSlugs.has(slug) || seenSlugs.has(slug)) {
         errors.push(`Slug "${slug}" is already in use`);
       } else {

@@ -77,6 +77,13 @@ describe('FoodsImporter', () => {
       expect(row.errors).toEqual([]);
     });
 
+    it('accepts slugs that include dots', async () => {
+      const { importer } = buildImporter();
+      const [row] = await importer.validateRows(wrap([{ name: 'Special Combo', slug: 'special.combo' }]));
+      expect(row.errors).toEqual([]);
+      expect(row.slug).toBe('special.combo');
+    });
+
     it('does not error on an unmatched category — matches the pre-migration behavior of importing without one', async () => {
       const { importer } = buildImporter();
       const [row] = await importer.validateRows(wrap([{ name: 'Mystery Dish', foodCategory: 'Nonexistent' }]));

@@ -31,8 +31,8 @@ export class CreateFoodDto {
 
   @ApiProperty({ example: 'margherita-pizza' })
   @IsString()
-  @Matches(/^[a-z0-9]+(-[a-z0-9]+)*$/, {
-    message: 'slug must be lowercase, alphanumeric, hyphen-separated',
+  @Matches(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/, {
+    message: 'slug must be lowercase, alphanumeric, dot or hyphen-separated',
   })
   @MaxLength(255)
   slug: string;
