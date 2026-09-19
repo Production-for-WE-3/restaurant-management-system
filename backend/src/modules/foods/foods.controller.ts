@@ -18,6 +18,7 @@ import { RequirePermissions } from '../auth/decorators/require-permissions.decor
 import { OutletAccessService } from '../auth/outlet-access.service';
 import { User } from '../users/entities/user.entity';
 import { AssignAddonGroupDto } from './dto/assign-addon-group.dto';
+import { BulkDeleteFoodsDto } from './dto/bulk-delete-foods.dto';
 import { CreateFoodRecipeDto } from './dto/create-food-recipe.dto';
 import { CreateFoodDto } from './dto/create-food.dto';
 import { ListFoodsQueryDto } from './dto/list-foods-query.dto';
@@ -95,6 +96,16 @@ export class FoodsController {
   @ApiOperation({ summary: 'Soft-deletes a food' })
   remove(@Param('id', ParseIntPipe) id: number) {
     return this.foodsService.remove(id);
+  }
+
+  @Post('bulk-delete')
+  @RequirePermissions('foods.manage')
+  @ApiOperation({
+    summary:
+      'Soft-deletes every requested food id that belongs to the current tenant (ids outside it are silently skipped)',
+  })
+  bulkRemove(@Body() dto: BulkDeleteFoodsDto) {
+    return this.foodsService.removeMany(dto.ids);
   }
 
   @Get(':id/outlets')

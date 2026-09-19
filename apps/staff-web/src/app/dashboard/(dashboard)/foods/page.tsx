@@ -2,41 +2,81 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { DownloadIcon } from "lucide-react"
-import { flexRender, getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table"
+import { DownloadIcon, Trash2Icon } from "lucide-react"
+import { flexRender, getCoreRowModel, useReactTable, type ColumnDef, type RowSelectionState } from "@tanstack/react-table"
+import { toast } from "sonner"
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { TableSkeleton } from "@/components/ui/skeletons"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useDelayedLoading } from "@/components/ui/use-delayed-loading"
 import { useFoodCategories } from "@/hooks/use-food-categories"
 import { useAnalyticsProducts } from "@/hooks/use-analytics"
-import { useFoods, type Food } from "@/hooks/use-foods"
+import { useBulkDeleteFoods, useFoods, type Food } from "@/hooks/use-foods"
 import { CreateFoodDialog } from "./create-food-dialog"
 import { FoodsBackgroundPrefetch } from "./foods-background-prefetch"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 type FoodRow = Food & { categoryName: string; popularity: number; periodRevenue: number }
-const columns: ColumnDef<FoodRow>[] = [
-  { accessorKey: "name", header: "Name" },
-  { accessorKey: "categoryName", header: "Category" },
-  { accessorKey: "skuSegment", header: "SKU" },
-  { accessorKey: "popularity", header: "Sold", cell: ({ row }) => row.original.popularity.toLocaleString() },
-  { accessorKey: "periodRevenue", header: "Revenue", cell: ({ row }) => `NPR ${Math.round(row.original.periodRevenue).toLocaleString()}` },
-  {
-    id: "flags",
-    header: "",
-    cell: ({ row }) => (
-      <div className="flex gap-1">
-        {row.original.hasVariants && <Badge variant="secondary">variants</Badge>}
-        {row.original.hasAddons && <Badge variant="secondary">addons</Badge>}
-        {!row.original.isActive && <Badge variant="destructive">inactive</Badge>}
-      </div>
-    ),
-  },
-]
+
+const SELECT_COLUMN_ID = "select"
+
+function buildColumns(selectable: boolean): ColumnDef<FoodRow>[] {
+  const dataColumns: ColumnDef<FoodRow>[] = [
+    { accessorKey: "name", header: "Name" },
+    { accessorKey: "categoryName", header: "Category" },
+    { accessorKey: "skuSegment", header: "SKU" },
+    { accessorKey: "popularity", header: "Sold", cell: ({ row }) => row.original.popularity.toLocaleString() },
+    { accessorKey: "periodRevenue", header: "Revenue", cell: ({ row }) => `NPR ${Math.round(row.original.periodRevenue).toLocaleString()}` },
+    {
+      id: "flags",
+      header: "",
+      cell: ({ row }) => (
+        <div className="flex gap-1">
+          {row.original.hasVariants && <Badge variant="secondary">variants</Badge>}
+          {row.original.hasAddons && <Badge variant="secondary">addons</Badge>}
+          {!row.original.isActive && <Badge variant="destructive">inactive</Badge>}
+        </div>
+      ),
+    },
+  ]
+  if (!selectable) return dataColumns
+  return [
+    {
+      id: SELECT_COLUMN_ID,
+      header: ({ table }) => (
+        <Checkbox
+          checked={table.getIsAllPageRowsSelected()}
+          indeterminate={table.getIsSomePageRowsSelected() && !table.getIsAllPageRowsSelected()}
+          onCheckedChange={(value) => table.toggleAllPageRowsSelected(value === true)}
+          aria-label="Select all"
+        />
+      ),
+      cell: ({ row }) => (
+        <Checkbox
+          checked={row.getIsSelected()}
+          onCheckedChange={(value) => row.toggleSelected(value === true)}
+          aria-label="Select row"
+        />
+      ),
+    },
+    ...dataColumns,
+  ]
+}
 
 export default function FoodsPage() {
   return <FoodsList readOnly={false} />

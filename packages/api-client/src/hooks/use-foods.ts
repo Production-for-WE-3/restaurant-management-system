@@ -110,6 +110,15 @@ export function useDeleteFood() {
   })
 }
 
+export function useBulkDeleteFoods() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (ids: number[]) =>
+      apiClient<{ deleted: number }>("/foods/bulk-delete", { method: "POST", body: JSON.stringify({ ids }) }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.foods.lists() }),
+  })
+}
+
 export function useFoodOutlets(foodId: number) {
   return useQuery({
     queryKey: queryKeys.foods.outlets(foodId),
