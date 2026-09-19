@@ -43,8 +43,8 @@ export function VariantListManager({
   title: string
   example: string
 }) {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("food-variants.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("food-variants.manage")
 
   const { data, isLoading } = useVariantList(list)
   const showSkeleton = useDelayedLoading(isLoading)

@@ -27,8 +27,8 @@ const STAGE_FILTERS: { stage: TicketStage; label: string; dot: string }[] = [
  * ticketStage() status machine — only the layout differs.
  */
 export default function StaffKitchenPage() {
-  const { permissions, isSuperadmin, positionSlugs } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("kitchen-tickets.manage")
+  const { permissions, positionSlugs } = useCurrentUser()
+  const canManage = permissions.includes("kitchen-tickets.manage")
   const isKitchenStaff = !isSuperadmin && (positionSlugs.includes("cook") || positionSlugs.includes("kitchen-helper"))
   const { outletId: effectiveOutletId, departmentId } = useActiveOutlet()
 

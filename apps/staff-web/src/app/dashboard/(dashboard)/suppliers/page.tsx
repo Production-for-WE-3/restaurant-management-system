@@ -30,8 +30,8 @@ const PAGE_SIZE = 10
 
 export default function SuppliersPage() {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("suppliers.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("suppliers.manage")
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")

@@ -44,8 +44,8 @@ import { usePageTitle } from "@rms/ui/use-page-title"
 const PAGE_SIZE = 10
 
 export default function SupplierPaymentsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("supplier-payments.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("supplier-payments.manage")
 
   const [supplierFilter, setSupplierFilter] = useState("all")
   const [outletFilter, setOutletFilter] = useState("all")

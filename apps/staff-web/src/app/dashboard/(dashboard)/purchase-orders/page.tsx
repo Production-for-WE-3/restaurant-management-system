@@ -29,8 +29,8 @@ const PAGE_SIZE = 10
 
 export default function PurchaseOrdersPage() {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("purchase-orders.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("purchase-orders.manage")
 
   const [search, setSearch] = useState("")
   const [statusFilter, setStatusFilter] = useState("all")

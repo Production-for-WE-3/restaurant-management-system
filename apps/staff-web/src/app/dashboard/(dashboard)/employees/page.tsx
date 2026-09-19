@@ -29,8 +29,8 @@ const PAGE_SIZE = 10
 
 export default function EmployeesPage() {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("employees.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("employees.manage")
 
   const [search, setSearch] = useState("")
   const [outletFilter, setOutletFilter] = useState("all")

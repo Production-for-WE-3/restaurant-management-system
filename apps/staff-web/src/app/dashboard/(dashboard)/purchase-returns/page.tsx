@@ -53,8 +53,8 @@ import { usePageTitle } from "@rms/ui/use-page-title"
 const PAGE_SIZE = 10
 
 export default function PurchaseReturnsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("purchase-returns.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("purchase-returns.manage")
 
   const [outletFilter, setOutletFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")

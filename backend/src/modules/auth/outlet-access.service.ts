@@ -20,11 +20,8 @@ export class OutletAccessService {
 
   async getAccessibleOutletIds(
     userId: number,
-    isSuperadmin: boolean,
+    _legacyBypassFlag = false,
   ): Promise<AccessibleOutlets> {
-    if (isSuperadmin) {
-      return ALL_OUTLETS;
-    }
     const outletIds = await this.permissionsService.getAccessibleOutletIds(
       userId,
     );
@@ -37,19 +34,19 @@ export class OutletAccessService {
 
   async canAccessOutlet(
     userId: number,
-    isSuperadmin: boolean,
+    legacyBypassFlag: boolean,
     outletId: number,
   ): Promise<boolean> {
-    const accessible = await this.getAccessibleOutletIds(userId, isSuperadmin);
+    const accessible = await this.getAccessibleOutletIds(userId, legacyBypassFlag);
     return accessible === ALL_OUTLETS || accessible.includes(outletId);
   }
 
   async assertOutletAccess(
     userId: number,
-    isSuperadmin: boolean,
+    legacyBypassFlag: boolean,
     outletId: number,
   ): Promise<void> {
-    const allowed = await this.canAccessOutlet(userId, isSuperadmin, outletId);
+    const allowed = await this.canAccessOutlet(userId, legacyBypassFlag, outletId);
     if (!allowed) {
       throw new ForbiddenException('You do not have access to this outlet');
     }
@@ -57,9 +54,9 @@ export class OutletAccessService {
 
   /** Resolves a reporting request to one safe active outlet. Undefined means all outlets for a superadmin. */
   async resolveReportingOutlet(user: User, requestedOutletId?: number): Promise<number | undefined> {
-    const accessible = await this.getAccessibleOutletIds(user.id, user.isSuperadmin);
+    const accessible = await this.getAccessibleOutletIds(user.id);
     if (requestedOutletId !== undefined) {
-      await this.assertOutletAccess(user.id, user.isSuperadmin, requestedOutletId);
+      await this.assertOutletAccess(user.id, false, requestedOutletId);
       return requestedOutletId;
     }
     if (accessible === ALL_OUTLETS) return undefined;
@@ -68,6 +65,6 @@ export class OutletAccessService {
   }
 
   assertSuperadmin(user: User): void {
-    if (!user.isSuperadmin) throw new ForbiddenException('Only a superadmin may perform this operation');
+    throw new ForbiddenException('Control-plane operations are not available in the tenant API');
   }
 }

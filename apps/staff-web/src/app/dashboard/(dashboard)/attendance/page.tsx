@@ -47,9 +47,9 @@ import { useActiveOutlet } from "@/lib/outlet/active-outlet-context"
 const PAGE_SIZE = 10
 
 export default function AttendancePage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
+  const { permissions } = useCurrentUser()
   const { outletId: activeOutletId } = useActiveOutlet()
-  const canManage = isSuperadmin || permissions.includes("attendance.manage")
+  const canManage = permissions.includes("attendance.manage")
 
   const [outletFilter, setOutletFilter] = useState("all")
   const [statusFilter, setStatusFilter] = useState("all")
@@ -59,7 +59,7 @@ export default function AttendancePage() {
   const [qrLoading, setQrLoading] = useState(false)
 
   const { data: outlets } = useOutlets({ limit: 100 })
-  const effectiveOutletFilter = !isSuperadmin && activeOutletId ? String(activeOutletId) : outletFilter
+  const effectiveOutletFilter = activeOutletId ? String(activeOutletId) : outletFilter
   const selectedOutletId = effectiveOutletFilter !== "all" ? Number(effectiveOutletFilter) : activeOutletId
   const activeOutlet = outlets?.data.find((outlet) => outlet.id === selectedOutletId)
   const { data: employees } = useEmployees({ limit: 200 })
@@ -175,12 +175,11 @@ export default function AttendancePage() {
       <div className="flex flex-wrap items-end gap-4">
         <div className="w-56 space-y-1.5">
           <label className="text-sm font-medium">Filter by outlet</label>
-          <Select value={effectiveOutletFilter} disabled={!isSuperadmin} onValueChange={(v) => { setOutletFilter(v ?? "all"); setPage(1) }}>
+          <Select value={effectiveOutletFilter} disabled onValueChange={(v) => { setOutletFilter(v ?? "all"); setPage(1) }}>
             <SelectTrigger className="w-full">
               <SelectValue placeholder="All outlets" />
             </SelectTrigger>
             <SelectContent>
-              {isSuperadmin && <SelectItem value="all">All outlets</SelectItem>}
               {outlets?.data.map((outlet) => (
                 <SelectItem key={outlet.id} value={String(outlet.id)}>
                   {outlet.name}

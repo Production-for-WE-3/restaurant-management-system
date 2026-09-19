@@ -52,8 +52,8 @@ function formatPortalLabel(portal?: string | null) {
 }
 
 export default function PositionsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("employees.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("employees.manage")
   const { data: positions, isLoading } = usePositions()
   const showSkeleton = useDelayedLoading(isLoading)
   const deletePosition = useDeletePosition()

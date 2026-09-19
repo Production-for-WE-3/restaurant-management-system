@@ -31,7 +31,6 @@ export class TenantGuard implements CanActivate {
     // Every request handled by the tenant backend must carry an explicit
     // tenant context. Without this, public menu/branding calls could read the
     // fallback/global dataset and authenticated APIs could query unscoped data.
-    // Superadmin control-plane calls are the only intentional exception.
     const user = request.user;
     if (!user) {
       if (!isPublic || !slug) throw new ForbiddenException('Tenant context is required');
@@ -41,18 +40,6 @@ export class TenantGuard implements CanActivate {
       );
       if (!publicTenant[0]) throw new ForbiddenException('Unknown or inactive tenant');
       request.tenantId = Number(publicTenant[0].id);
-      return true;
-    }
-
-    if (user.isSuperadmin) {
-      if (slug) {
-        const selectedTenant = await this.dataSource.query(
-          `SELECT id FROM tenants WHERE LOWER(slug) = $1 AND is_active = true LIMIT 1`,
-          [slug],
-        );
-        if (!selectedTenant[0]) throw new ForbiddenException('Unknown or inactive tenant');
-        request.tenantId = Number(selectedTenant[0].id);
-      }
       return true;
     }
 

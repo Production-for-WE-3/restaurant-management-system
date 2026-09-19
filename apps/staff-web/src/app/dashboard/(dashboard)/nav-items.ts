@@ -16,8 +16,6 @@ export interface NavLinkDef {
   href: string
   label: string
   permission: string | true
-  /** When set, only superadmins may see/access this link — permission is ignored entirely. */
-  superadminOnly?: boolean
 }
 
 export interface NavGroupDef {
@@ -135,13 +133,13 @@ export const navGroupDefs: NavGroupDef[] = [
 /** Flattened {href, permission} table — shared with the server-side route guard in layout.tsx. */
 export const navRoutePermissions = navGroupDefs.flatMap((group) => group.links)
 
-export function visibleNavGroups(permissions: string[], isSuperadmin: boolean) {
-  const has = (permission: string | true) => hasRoutePermission({ isSuperadmin, permissions }, permission)
+export function visibleNavGroups(permissions: string[]) {
+  const has = (permission: string | true) => hasRoutePermission({ permissions }, permission)
 
   return navGroupDefs
     .map((group) => ({
       ...group,
-      links: group.links.filter((link) => (link.superadminOnly ? isSuperadmin : has(link.permission))),
+      links: group.links.filter((link) => has(link.permission)),
     }))
     .filter((group) => group.links.length > 0)
 }

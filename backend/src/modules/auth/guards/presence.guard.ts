@@ -20,7 +20,7 @@ export class PresenceGuard implements CanActivate {
     if (this.reflector.getAllAndOverride<boolean>(ALLOW_WITHOUT_PRESENCE, [context.getHandler(), context.getClass()])) return true;
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
     const user = request.user;
-    if (!user || user.isSuperadmin) return true;
+    if (!user) return true;
     if ((await this.permissionsService.getPositionSlugs(user.id)).includes('admin')) return true;
     if (!this.reflector.getAllAndOverride<string[]>(PERMISSIONS_KEY, [context.getHandler(), context.getClass()])?.length) return true;
     if (!user.tenantId) return true;

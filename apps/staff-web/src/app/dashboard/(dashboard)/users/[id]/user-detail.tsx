@@ -33,8 +33,8 @@ import { updateUserSchema, type UpdateUserInput } from "@/lib/validators/users"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 export function UserDetail({ userId }: { userId: number }) {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManageUsers = isSuperadmin || permissions.includes("users.manage")
+  const { permissions } = useCurrentUser()
+  const canManageUsers = permissions.includes("users.manage")
   const { data: user, isLoading } = useUser(userId)
   const showSkeleton = useDelayedLoading(isLoading)
   const updateUser = useUpdateUser(userId)

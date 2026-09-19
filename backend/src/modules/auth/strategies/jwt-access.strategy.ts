@@ -12,7 +12,6 @@ import { User } from '../../users/entities/user.entity';
 export interface JwtAccessPayload {
   sub: number;
   email: string;
-  isSuperadmin: boolean;
 }
 
 // Profiling showed this lookup runs on every single authenticated request

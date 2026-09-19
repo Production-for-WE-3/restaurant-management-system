@@ -45,8 +45,8 @@ import { addPurchaseOrderItemSchema, type AddPurchaseOrderItemInput } from "@/li
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 export function PurchaseOrderDetail({ purchaseOrderId }: { purchaseOrderId: number }) {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("purchase-orders.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("purchase-orders.manage")
 
   const { data: po, isLoading } = usePurchaseOrder(purchaseOrderId)
   const showSkeleton = useDelayedLoading(isLoading)

@@ -2,20 +2,15 @@
 
 import { useRef, useState } from "react"
 import { ArmchairIcon, GripIcon } from "lucide-react"
-import { toast } from "sonner"
 
 import { Button } from "@rms/ui/button"
 import { cn } from "@rms/ui/cn"
 import { Badge } from "@rms/ui/badge"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@rms/ui/alert-dialog"
 import { useActiveOutlet } from "@rms/api-client/outlet/active-outlet-context"
 import { useDiningAreas } from "@rms/api-client/hooks/use-dining-areas"
-import { useDeleteDiningArea } from "@rms/api-client/hooks/use-dining-areas"
 import { useDiningTables, useUpdateDiningTable, type DiningTable } from "@rms/api-client/hooks/use-dining-tables"
-import { useCurrentUser } from "@rms/auth/current-user-context"
 import { usePageTitle } from "@rms/ui/use-page-title"
 import { CreateDiningTableDialog } from "../tables/create-dining-table-dialog"
-import { CreateDiningAreaDialog } from "./create-dining-area-dialog"
 
 type Point = { x: number; y: number }
 const STATUS_STYLES: Record<string, string> = {
@@ -28,7 +23,6 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default function FloorPlanPage() {
   const { outletId } = useActiveOutlet()
-  const { isSuperadmin } = useCurrentUser()
   const [arrangeMode, setArrangeMode] = useState(false)
   const [positions, setPositions] = useState<Record<number, Point>>({})
   const { data: areas, isLoading } = useDiningAreas({ outletId: outletId ?? undefined, limit: 100 })
@@ -44,7 +38,6 @@ export default function FloorPlanPage() {
           <h1 className="text-lg font-semibold">Floor Plan</h1>
         </div>
         <div className="flex items-center gap-2">
-          {isSuperadmin && <CreateDiningAreaDialog />}
           <CreateDiningTableDialog />
           <Button variant={arrangeMode ? "default" : "outline"} size="sm" onClick={() => setArrangeMode((value) => !value)}>
             <GripIcon /> {arrangeMode ? "Done arranging" : "Arrange floor"}
@@ -62,28 +55,18 @@ export default function FloorPlanPage() {
       {isLoading && <div className="h-80 animate-pulse rounded-xl border bg-muted/30" />}
       {!isLoading && (areas?.data.length ?? 0) === 0 && <p className="rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">Create a dining area first, then place its tables here.</p>}
       <div className="space-y-5">
-        {areas?.data.map((area) => <AreaMap key={area.id} outletId={outletId} area={area} isSuperadmin={isSuperadmin} arrangeMode={arrangeMode} positions={positions} onPositionChange={(tableId, point) => setPositions((current) => ({ ...current, [tableId]: point }))} />)}
+        {areas?.data.map((area) => <AreaMap key={area.id} outletId={outletId} area={area} arrangeMode={arrangeMode} positions={positions} onPositionChange={(tableId, point) => setPositions((current) => ({ ...current, [tableId]: point }))} />)}
       </div>
     </div>
   )
 }
 
-function AreaMap({ outletId, area, isSuperadmin, arrangeMode, positions, onPositionChange }: { outletId: number; area: { id: number; name: string; code: string | null; isActive: boolean }; isSuperadmin: boolean; arrangeMode: boolean; positions: Record<number, Point>; onPositionChange: (tableId: number, point: Point) => void }) {
+function AreaMap({ outletId, area, arrangeMode, positions, onPositionChange }: { outletId: number; area: { id: number; name: string; code: string | null; isActive: boolean }; arrangeMode: boolean; positions: Record<number, Point>; onPositionChange: (tableId: number, point: Point) => void }) {
   const { data: tables } = useDiningTables({ outletId, diningAreaId: area.id, limit: 100 })
-  const deleteArea = useDeleteDiningArea()
-
-  async function handleDelete() {
-    try {
-      await deleteArea.mutateAsync(area.id)
-      toast.success(`Dining area "${area.name}" deleted`)
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to delete dining area")
-    }
-  }
 
   return (
     <section className="space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{area.name}</h2>{area.code && <span className="text-xs text-muted-foreground">{area.code}</span>}{!area.isActive && <Badge variant="destructive">inactive</Badge>}</div><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{tables?.data.length ?? 0} tables</span>{isSuperadmin && <AlertDialog><AlertDialogTrigger render={<Button variant="destructive" size="xs">Delete area</Button>} /><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete dining area &quot;{area.name}&quot;?</AlertDialogTitle><AlertDialogDescription>This permanently deletes any tables under this area too. This cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={handleDelete}>Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>}</div></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2"><h2 className="text-sm font-semibold">{area.name}</h2>{area.code && <span className="text-xs text-muted-foreground">{area.code}</span>}{!area.isActive && <Badge variant="destructive">inactive</Badge>}</div><div className="flex items-center gap-2"><span className="text-xs text-muted-foreground">{tables?.data.length ?? 0} tables</span></div></div>
       <div className="relative h-[420px] overflow-hidden rounded-xl border bg-muted/20 [background-image:linear-gradient(to_right,hsl(var(--border)/.35)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/.35)_1px,transparent_1px)] [background-size:32px_32px] sm:h-[360px]">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.05] via-transparent to-amber-500/[0.05]" />
         {(tables?.data ?? []).map((table, index) => <MapTable key={table.id} table={table} index={index} arrangeMode={arrangeMode} position={positions[table.id]} onPositionChange={onPositionChange} />)}

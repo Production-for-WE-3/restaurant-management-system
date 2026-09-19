@@ -45,9 +45,9 @@ const CURRENCIES = [
 ] as const
 
 export default function BusinessSettingsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("settings.view")
-  const canManage = isSuperadmin || permissions.includes("settings.manage")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("settings.view")
+  const canManage = permissions.includes("settings.manage")
   const { outletId: activeOutletId } = useActiveOutlet()
   const { data: hours } = useOperatingHours(activeOutletId)
   const updateHours = useUpdateOperatingHours(activeOutletId)

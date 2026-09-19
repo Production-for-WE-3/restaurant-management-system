@@ -36,9 +36,9 @@ const PRIORITIES = [
 ] as const
 
 export default function KitchenSettingsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("settings.view")
-  const canManage = isSuperadmin || permissions.includes("settings.manage")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("settings.view")
+  const canManage = permissions.includes("settings.manage")
 
   const { data, isLoading } = useSettingsCategory<KitchenSettings>("kitchen")
   const showSkeleton = useDelayedLoading(isLoading)

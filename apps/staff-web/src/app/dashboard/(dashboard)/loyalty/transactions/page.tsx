@@ -40,8 +40,8 @@ function typeBadgeVariant(type: string): "secondary" | "destructive" | "outline"
 }
 
 export default function LoyaltyTransactionsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("loyalty.view")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("loyalty.view")
 
   const [typeFilter, setTypeFilter] = useState("all")
   const [customerId, setCustomerId] = useState("")

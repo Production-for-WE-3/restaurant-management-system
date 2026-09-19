@@ -11,8 +11,8 @@ import { useSettingsCategory, type LoyaltySettings } from "@/hooks/use-settings"
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 export default function LoyaltyPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("loyalty.view")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("loyalty.view")
 
   const { data, isLoading } = useSettingsCategory<LoyaltySettings>("loyalty")
   const showSkeleton = useDelayedLoading(isLoading)

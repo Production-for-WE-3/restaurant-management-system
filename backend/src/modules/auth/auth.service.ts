@@ -77,17 +77,17 @@ export class AuthService {
     const userQuery = this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.password')
-      .where('LOWER(user.email) = LOWER(:email)', { email });
+      .where('LOWER(user.email) = LOWER(:email)', { email })
+      .andWhere('user.is_superadmin = false');
 
     if (tenantSlug) {
       userQuery
-        .leftJoin(
+        .innerJoin(
           'tenants',
           'login_tenant',
           'login_tenant.id = user.tenant_id AND LOWER(login_tenant.slug) = LOWER(:tenantSlug) AND login_tenant.is_active = true',
           { tenantSlug },
-        )
-        .andWhere('(user.is_superadmin = true OR login_tenant.id IS NOT NULL)');
+        );
     }
 
     const user = await userQuery.getOne();
@@ -220,7 +220,6 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
-      isSuperadmin: user.isSuperadmin,
     });
 
     const rawRefreshToken = randomBytes(48).toString('hex');

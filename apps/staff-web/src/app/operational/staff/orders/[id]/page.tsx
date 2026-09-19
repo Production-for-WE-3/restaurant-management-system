@@ -14,7 +14,7 @@ import { getCurrentUser } from "@rms/auth/dal"
 export default async function StaffOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const user = await getCurrentUser()
-  const isWaiter = !user.isSuperadmin && user.positionSlugs.includes("waiter")
+  const isWaiter = user.positionSlugs.includes("waiter")
 
   return (
     <OrderDetail

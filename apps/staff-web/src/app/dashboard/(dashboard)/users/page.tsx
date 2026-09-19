@@ -62,8 +62,8 @@ function useDebouncedValue<T>(value: T, delayMs: number): T {
 
 export default function UsersPage() {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("users.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("users.manage")
   const [search, setSearch] = useState("")
   const debouncedSearch = useDebouncedValue(search, 300)
   const [page, setPage] = useState(1)

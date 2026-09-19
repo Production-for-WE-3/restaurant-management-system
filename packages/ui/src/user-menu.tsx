@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation"
 import { LogOutIcon, UserIcon } from "lucide-react"
 
 import { Avatar, AvatarFallback } from "./avatar"
-import { Badge } from "./badge"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -61,14 +60,7 @@ export function UserMenu({ profileHref }: { profileHref?: string } = {}) {
       <DropdownMenuContent align="end" sideOffset={8} className="w-64">
         <DropdownMenuGroup>
           <DropdownMenuLabel className="flex flex-col gap-1 py-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-foreground">{user.name}</span>
-              {user.isSuperadmin && (
-                <Badge variant="secondary" className="text-[10px]">
-                  Superadmin
-                </Badge>
-              )}
-            </div>
+            <span className="text-sm font-medium text-foreground">{user.name}</span>
             <span className="text-xs font-normal text-muted-foreground">{user.email}</span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>

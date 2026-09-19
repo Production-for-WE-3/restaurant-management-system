@@ -7,7 +7,6 @@ import {
   Logger,
   Post,
   Req,
-  UnauthorizedException,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -67,7 +66,6 @@ export class AuthController {
         ? request.headers['x-tenant-slug']
         : undefined,
     );
-    this.assertApiUser(user);
     return { ...tokens, user: await this.toAuthUser(user, undefined, undefined, true) };
   }
 
@@ -80,7 +78,6 @@ export class AuthController {
   @ApiOkResponse({ type: AuthResponseDto, description: 'Rotated session' })
   async refresh(@Body() dto: RefreshTokenDto): Promise<AuthResponseDto> {
     const { tokens, user } = await this.authService.refresh(dto.refreshToken);
-    this.assertApiUser(user);
     return { ...tokens, user: await this.toAuthUser(user, undefined, undefined, true) };
   }
 
@@ -111,23 +108,17 @@ export class AuthController {
     const phases: Record<string, number> = {};
 
     const permStartUs = this.nowMicros();
-    const permissions = await this.permissionsService.getPermissionSlugs(
-      user.id,
-    );
-    phases['permissions'] = Math.round((this.nowMicros() - permStartUs) / 1000);
-
-    // Measure portal access
     const portalStartUs = this.nowMicros();
-    const portal = user.isSuperadmin
-      ? ('dashboard' as const)
-      : await this.permissionsService.getPortalAccess(user.id);
-    const hasBothPortals = user.isSuperadmin
-      ? true
-      : await this.permissionsService.hasBothPortals(user.id);
-    phases['portal'] = Math.round((this.nowMicros() - portalStartUs) / 1000);
-
     const positionStartUs = this.nowMicros();
-    const positionSlugs = await this.permissionsService.getPositionSlugs(user.id);
+    const [permissions, portal, hasBothPortals, positionSlugs] = await Promise.all([
+      this.permissionsService.getPermissionSlugs(user.id),
+      this.permissionsService.getPortalAccess(user.id),
+      this.permissionsService.hasBothPortals(user.id),
+      this.permissionsService.getPositionSlugs(user.id),
+    ]);
+    const resolvedUs = this.nowMicros();
+    phases['permissions'] = Math.round((resolvedUs - permStartUs) / 1000);
+    phases['portal'] = Math.round((resolvedUs - portalStartUs) / 1000);
     phases['positions'] = Math.round((this.nowMicros() - positionStartUs) / 1000);
 
     const meDurationMs = Math.round((this.nowMicros() - meStartUs) / 1000);
@@ -172,7 +163,7 @@ export class AuthController {
 
     const ticket = await this.wsTickets.issue(
       'staff',
-      { userId: user.id, isSuperadmin: user.isSuperadmin },
+      { userId: user.id },
       WS_TICKET_TTL_SECONDS,
     );
 
@@ -212,39 +203,28 @@ export class AuthController {
     hasBothPortals?: boolean,
     includeOutletIds = false,
   ) {
-    const resolvedPortal =
-      portal ??
-      (user.isSuperadmin
-        ? ('dashboard' as const)
-        : await this.permissionsService.getPortalAccess(user.id));
-    const resolvedHasBothPortals =
-      hasBothPortals ??
-      (user.isSuperadmin
-        ? true
-        : await this.permissionsService.hasBothPortals(user.id));
-    const employeeOutletIds = includeOutletIds && !user.isSuperadmin
-      ? await this.permissionsService.getEmployeeAssignedOutletIds(user.id)
-      : [];
+    const [resolvedPortal, resolvedHasBothPortals, employeeOutletIds] = await Promise.all([
+      portal ? Promise.resolve(portal) : this.permissionsService.getPortalAccess(user.id),
+      hasBothPortals !== undefined
+        ? Promise.resolve(hasBothPortals)
+        : this.permissionsService.hasBothPortals(user.id),
+      includeOutletIds
+        ? this.permissionsService.getEmployeeAssignedOutletIds(user.id)
+        : Promise.resolve([]),
+    ]);
     const outletIds = includeOutletIds
-      ? (user.isSuperadmin
-        ? []
-        : (employeeOutletIds.length > 0
-          ? employeeOutletIds
-          : ((await this.permissionsService.getAccessibleOutletIds(user.id)) ?? [])))
+      ? (employeeOutletIds.length > 0
+        ? employeeOutletIds
+        : ((await this.permissionsService.getAccessibleOutletIds(user.id)) ?? []))
       : [];
     return {
       id: user.id,
       name: user.name,
       email: user.email,
       tenantId: user.tenantId,
-      isSuperadmin: user.isSuperadmin,
       portal: resolvedPortal,
       hasBothPortals: resolvedHasBothPortals,
       outletIds,
     };
-  }
-
-  private assertApiUser(user: User): void {
-    if (user.isSuperadmin) throw new UnauthorizedException('Control-plane accounts cannot use the tenant API');
   }
 }

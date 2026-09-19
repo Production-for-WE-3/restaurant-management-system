@@ -26,7 +26,7 @@ export default async function OperationalLayout({ children }: { children: React.
       <CurrentUserProvider user={user}>
         <ActiveOutletProvider>
           <RealtimeInvalidationProvider />
-          <OperationalChrome permissions={user.permissions} isSuperadmin={user.isSuperadmin} allowed={allowed}>
+          <OperationalChrome permissions={user.permissions} allowed={allowed}>
             {children}
           </OperationalChrome>
         </ActiveOutletProvider>

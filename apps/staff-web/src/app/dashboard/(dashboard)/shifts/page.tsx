@@ -48,8 +48,8 @@ import { assignShiftSchema, createShiftSchema, type AssignShiftInput, type Creat
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 export default function ShiftsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("shifts.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("shifts.manage")
 
   const [outletFilter, setOutletFilter] = useState("all")
   const { data: outlets } = useOutlets({ limit: 100 })

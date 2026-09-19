@@ -101,7 +101,7 @@ export function OutletDetail({ outletId }: { outletId: number }) {
           <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {user.isSuperadmin ? <Form {...form}>
+          {user.false ? <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}

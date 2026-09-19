@@ -1,18 +1,14 @@
 "use client"
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
 import { ApiError } from "../client"
 import { useAssignedOutletDepartments } from "../hooks/use-outlet-departments"
 import type { OutletDepartment } from "../hooks/use-outlet-departments"
-import { useAssignedOutlets, useOutlets, useSuperadminTenants, type Outlet, type SuperadminTenant } from "../hooks/use-outlets"
+import { useAssignedOutlets, type Outlet } from "../hooks/use-outlets"
 import { useCurrentUser } from "@rms/auth/current-user-context"
 
 const ACTIVE_OUTLET_STORAGE_KEY = "active-outlet-id"
-const ACTIVE_TENANT_STORAGE_KEY = "active-tenant-slug"
-const ACTIVE_TENANT_ID_STORAGE_KEY = "active-tenant-id"
 const ACTIVE_DEPARTMENT_STORAGE_KEY = "active-department-id"
-const ALL_OUTLETS_SENTINEL = "all"
 
 function readStoredId(key: string): number | null {
   if (typeof window === "undefined") return null
@@ -22,26 +18,12 @@ function readStoredId(key: string): number | null {
   return Number.isFinite(n) ? n : null
 }
 
-/** Distinguishes "never chosen yet" (null, auto-select kicks in) from "explicitly chose All Outlets" (also null, but sticky). */
-function readStoredOutletWasAll(): boolean {
-  if (typeof window === "undefined") return false
-  return localStorage.getItem(ACTIVE_OUTLET_STORAGE_KEY) === ALL_OUTLETS_SENTINEL
-}
-
 interface ActiveOutletContextValue {
   outletId: number | null
   setOutletId: (id: number | null) => void
   outlets: Outlet[]
   isLoadingOutlets: boolean
-  /** Superadmins always get the full picker; regular users only when they have more than one assigned outlet. */
   showOutletPicker: boolean
-  /** Only superadmins may pick "All Outlets" — every other role must always have one specific outlet active. */
-  isSuperadmin: boolean
-  tenants: SuperadminTenant[]
-  activeTenantSlug: string | null
-  setActiveTenantSlug: (slug: string) => void
-  isLoadingTenants: boolean
-
   departmentId: number | null
   setDepartmentId: (id: number | null) => void
   departments: OutletDepartment[]
@@ -51,144 +33,51 @@ interface ActiveOutletContextValue {
 
 const ActiveOutletContext = createContext<ActiveOutletContextValue | null>(null)
 
-/**
- * Single source of truth for "which outlet/department is active" across POS,
- * Floor, Service, Kitchen and notifications.
- *
- * Superadmins list every outlet via GET /outlets. Everyone else never calls
- * that endpoint (it requires `outlets.view`, which a cashier has no reason to
- * hold) — they get exactly their assigned outlets from GET /outlets/assigned,
- * which is driven by assignments, not permissions. One assigned outlet means
- * the picker never even renders; the same auto-select/hide-picker rule
- * applies one level down to departments once an outlet is chosen.
- */
 export function ActiveOutletProvider({ children }: { children: React.ReactNode }) {
-  const { isSuperadmin, outletIds: userOutletIds } = useCurrentUser()
-  const queryClient = useQueryClient()
-  const tenantsQuery = useSuperadminTenants({ enabled: isSuperadmin })
-  const tenants = tenantsQuery.data ?? []
-  const [activeTenantSlug, setActiveTenantSlugState] = useState<string | null>(() =>
-    typeof window === "undefined" ? null : localStorage.getItem(ACTIVE_TENANT_STORAGE_KEY),
-  )
-
-  useEffect(() => {
-    if (!isSuperadmin || tenantsQuery.isLoading || tenants.length === 0) return
-    const selectedTenant = tenants.find((tenant) => tenant.slug === activeTenantSlug) ?? tenants[0]
-    const tenantChanged = localStorage.getItem(ACTIVE_TENANT_ID_STORAGE_KEY) !== String(selectedTenant.id)
-    if (selectedTenant.slug !== activeTenantSlug) {
-      setActiveTenantSlugState(selectedTenant.slug)
-      localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, selectedTenant.slug)
-    }
-    if (tenantChanged) {
-      localStorage.setItem(ACTIVE_TENANT_ID_STORAGE_KEY, String(selectedTenant.id))
-      setIsAllOutlets(true)
-      setOutletIdState(null)
-      // Reference-data queries such as roles and positions can start before
-      // the first tenant is auto-selected. Refetch them with the tenant
-      // header instead of leaving the initial unscoped response in cache.
-      void queryClient.invalidateQueries()
-    }
-  }, [activeTenantSlug, isSuperadmin, tenants, tenantsQuery.isLoading, queryClient])
-
-  function setActiveTenantSlug(slug: string) {
-    const selectedTenant = tenants.find((tenant) => tenant.slug === slug)
-    if (!selectedTenant) return
-    setActiveTenantSlugState(slug)
-    localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, slug)
-    localStorage.setItem(ACTIVE_TENANT_ID_STORAGE_KEY, String(selectedTenant.id))
-    setIsAllOutlets(true)
-    setOutletIdState(null)
-    // Tenant is part of the server-side request context, so cached results
-    // from the previous tenant must never be shown after switching.
-    void queryClient.invalidateQueries()
-  }
-
-  useEffect(() => {
-    if (activeTenantSlug) localStorage.setItem(ACTIVE_TENANT_STORAGE_KEY, activeTenantSlug)
-  }, [activeTenantSlug])
-
-  const allOutletsQuery = useOutlets({ limit: 100 }, { enabled: isSuperadmin && activeTenantSlug !== null })
-  const assignedOutletsQuery = useAssignedOutlets({ enabled: !isSuperadmin })
+  const { outletIds: userOutletIds } = useCurrentUser()
+  const assignedOutletsQuery = useAssignedOutlets()
 
   const outlets = useMemo(
-    () => (isSuperadmin ? (allOutletsQuery.data?.data ?? []) : (assignedOutletsQuery.data ?? [])),
-    [isSuperadmin, allOutletsQuery.data, assignedOutletsQuery.data],
+    () => assignedOutletsQuery.data ?? [],
+    [assignedOutletsQuery.data],
   )
-  const outletQuery = isSuperadmin ? allOutletsQuery : assignedOutletsQuery
-  const isLoadingOutlets = outletQuery.isLoading
-  const outletQueryFailed = outletQuery.isError
-  const outletQueryErrorMessage = outletQuery.error instanceof ApiError && outletQuery.error.status === 403
+  const isLoadingOutlets = assignedOutletsQuery.isLoading
+  const outletQueryFailed = assignedOutletsQuery.isError
+  const outletQueryErrorMessage = assignedOutletsQuery.error instanceof ApiError && assignedOutletsQuery.error.status === 403
     ? "This tenant is inactive or unavailable. Ask an administrator to restore access or assign you to an active tenant."
     : "The session is valid, but the staff permissions service could not load your assigned outlets."
-  // Regular users select among their assigned outlets from Profile. The
-  // shared header never exposes an "all" or null option for them.
-  const showOutletPicker = isSuperadmin
+  const showOutletPicker = outlets.length > 1
 
   const [outletId, setOutletIdState] = useState<number | null>(
     () => readStoredId(ACTIVE_OUTLET_STORAGE_KEY) ?? userOutletIds[0] ?? null,
   )
-  // Tracks an explicit "All Outlets" pick separately from outletId, since
-  // both are represented as `null` — without this, the auto-select effect
-  // below couldn't tell "never chosen yet" from "chose All on purpose" and
-  // would keep bouncing the user back to a single outlet.
-  const [isAllOutlets, setIsAllOutlets] = useState<boolean>(() =>
-    isSuperadmin && activeTenantSlug !== null ? true : readStoredOutletWasAll(),
-  )
 
   function setOutletId(id: number | null) {
-    // "All Outlets" is a superadmin-only concept. A non-superadmin can still
-    // switch between their own assigned outlets (from their profile page),
-    // just never to "all" — an out-of-assignment id is coerced onto their
-    // first assigned outlet instead.
-    if (!isSuperadmin) {
-      const requested = id !== null && outlets.some((o) => o.id === id) ? id : (outlets[0]?.id ?? null)
-      setIsAllOutlets(false)
-      setOutletIdState(requested)
-      return
-    }
-    setIsAllOutlets(id === null)
-    setOutletIdState(id)
+    const requested = id !== null && outlets.some((o) => o.id === id) ? id : (outlets[0]?.id ?? null)
+    setOutletIdState(requested)
   }
 
-  // Superadmins may remain on "All Outlets". For regular users, recover a
-  // missing/stale selection to the first assigned outlet; there is no valid
-  // regular-user state with a null outlet once assignments have loaded.
   useEffect(() => {
     if (isLoadingOutlets || outlets.length === 0) return
-    if (!isSuperadmin) {
-      const stillValid = outletId !== null && outlets.some((o) => o.id === outletId)
-      if (!stillValid) setOutletIdState(outlets[0].id)
-      return
-    }
-    if (isAllOutlets) return
     const stillValid = outletId !== null && outlets.some((o) => o.id === outletId)
     if (!stillValid) setOutletIdState(outlets[0].id)
-  }, [outlets, isLoadingOutlets, outletId, isAllOutlets, isSuperadmin])
+  }, [outlets, isLoadingOutlets, outletId])
 
   useEffect(() => {
-    if (isAllOutlets) {
-      localStorage.setItem(ACTIVE_OUTLET_STORAGE_KEY, ALL_OUTLETS_SENTINEL)
-    } else if (outletId !== null) {
+    if (outletId !== null) {
       localStorage.setItem(ACTIVE_OUTLET_STORAGE_KEY, String(outletId))
     } else {
       localStorage.removeItem(ACTIVE_OUTLET_STORAGE_KEY)
     }
-  }, [outletId, isAllOutlets])
+  }, [outletId])
 
-  // Departments for the active outlet — same permission-free, assignment-driven
-  // endpoint for every role; it already narrows to the user's own department(s)
-  // server-side and only falls back to "every department at this outlet" for
-  // superadmins/globally-scoped users.
   const departmentsQuery = useAssignedOutletDepartments(outletId)
   const departments = useMemo(() => departmentsQuery.data ?? [], [departmentsQuery.data])
   const isLoadingDepartments = departmentsQuery.isLoading
   const showDepartmentPicker = departments.length > 1
 
-  // Do not block the app shell while assigned outlets are loading. Pages can
-  // render immediately and the error/empty states below still take over once
-  // the request has settled.
   const regularUserHasValidOutlet =
-    isSuperadmin || isLoadingOutlets || (!outletQueryFailed && outletId !== null && outlets.some((outlet) => outlet.id === outletId))
+    isLoadingOutlets || (!outletQueryFailed && outletId !== null && outlets.some((outlet) => outlet.id === outletId))
 
   const [departmentId, setDepartmentId] = useState<number | null>(() =>
     readStoredId(ACTIVE_DEPARTMENT_STORAGE_KEY),
@@ -213,31 +102,31 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
   }, [departmentId])
 
   const outletAccessState = outletQueryFailed
+    ? (
+        <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
+          <p className="text-sm font-medium">Unable to load your outlet access.</p>
+          <p className="max-w-sm text-sm text-muted-foreground">
+            {outletQueryErrorMessage}
+          </p>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
+            onClick={() => void assignedOutletsQuery.refetch()}
+          >
+            Try again
+          </button>
+        </div>
+      )
+    : !isLoadingOutlets && outlets.length === 0
       ? (
           <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
-            <p className="text-sm font-medium">Unable to load your outlet access.</p>
+            <p className="text-sm font-medium">No outlet is assigned to this employee.</p>
             <p className="max-w-sm text-sm text-muted-foreground">
-              {outletQueryErrorMessage}
+              Ask an administrator to assign at least one outlet, then refresh this page.
             </p>
-            <button
-              type="button"
-              className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-muted"
-              onClick={() => void outletQuery.refetch()}
-            >
-              Try again
-            </button>
           </div>
         )
-      : !isSuperadmin && !isLoadingOutlets && outlets.length === 0
-        ? (
-            <div className="flex min-h-dvh flex-col items-center justify-center gap-3 p-6 text-center">
-              <p className="text-sm font-medium">No outlet is assigned to this employee.</p>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Ask an administrator to assign at least one outlet, then refresh this page.
-              </p>
-            </div>
-          )
-        : null
+      : null
 
   return (
     <ActiveOutletContext.Provider
@@ -247,11 +136,6 @@ export function ActiveOutletProvider({ children }: { children: React.ReactNode }
         outlets,
         isLoadingOutlets,
         showOutletPicker,
-        isSuperadmin,
-        tenants,
-        activeTenantSlug,
-        setActiveTenantSlug,
-        isLoadingTenants: tenantsQuery.isLoading,
         departmentId,
         setDepartmentId,
         departments,

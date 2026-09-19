@@ -25,16 +25,14 @@ import { OperatingStatusBadge } from "@rms/ui/operating-status-badge"
  */
 export function OperationalChrome({
   permissions,
-  isSuperadmin,
   allowed,
   children,
 }: {
   permissions: string[]
-  isSuperadmin: boolean
   allowed: boolean
   children: React.ReactNode
 }) {
-  const groups = visibleNavGroups(permissions, isSuperadmin)
+  const groups = visibleNavGroups(permissions)
 
   return (
     <>

@@ -18,9 +18,9 @@ import { usePageTitle } from "@rms/ui/use-page-title"
 const PAGE_SIZE = 10
 
 export default function LoyaltyCustomersPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("loyalty.view")
-  const canManage = isSuperadmin || permissions.includes("loyalty.manage")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("loyalty.view")
+  const canManage = permissions.includes("loyalty.manage")
 
   const [search, setSearch] = useState("")
   const [page, setPage] = useState(1)

@@ -36,11 +36,9 @@ export default function ProfilePage() {
   const router = useRouter()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
 
-  const roleLabel = user.isSuperadmin
-    ? "Superadmin"
-    : user.positionSlugs.length > 0
-      ? user.positionSlugs.map(titleCase).join(", ")
-      : "No role assigned"
+  const roleLabel = user.positionSlugs.length > 0
+    ? user.positionSlugs.map(titleCase).join(", ")
+    : "No role assigned"
 
   async function handleLogout() {
     setIsLoggingOut(true)

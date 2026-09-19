@@ -24,18 +24,14 @@ import { DashboardAssistantChatbot } from "./dashboard-assistant-chatbot"
  */
 export function DashboardChrome({
   permissions,
-  isSuperadmin,
-  positionSlugs,
   allowed,
   children,
 }: {
   permissions: string[]
-  isSuperadmin: boolean
-  positionSlugs: string[]
   allowed: boolean
   children: React.ReactNode
 }) {
-  const groups = visibleNavGroups(permissions, isSuperadmin)
+  const groups = visibleNavGroups(permissions)
 
   return (
     <>
@@ -61,7 +57,7 @@ export function DashboardChrome({
           </div>
         </AppSidebarShell>
       </div>
-      {(isSuperadmin || permissions.includes("assistant.use")) && <DashboardAssistantChatbot />}
+      {(permissions.includes("assistant.use")) && <DashboardAssistantChatbot />}
     </>
   )
 }

@@ -8,9 +8,8 @@ export interface CurrentUser {
   id: number
   name: string
   email: string
-  /** Hotel/company this user belongs to; null means superadmin/global. */
+  /** Hotel/company this user belongs to. */
   tenantId: number | null
-  isSuperadmin: boolean
   permissions: string[]
   /** Slugs of every active position linked to this user. */
   positionSlugs: string[]

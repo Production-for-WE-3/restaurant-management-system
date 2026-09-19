@@ -34,7 +34,7 @@ export function TableCard({
   // Waiters have nothing to do on a free table beyond tapping it to seat a
   // walk-in — reserving/QR/start-sale are cashier/manager tools, so skip the
   // menu entirely rather than show an empty-feeling dialog.
-  const isWaiter = !user.isSuperadmin && user.positionSlugs.includes("waiter")
+  const isWaiter = user.positionSlugs.includes("waiter")
   const showMenu = !(isWaiter && table.status === "available")
 
   return (

@@ -17,8 +17,8 @@ export default function StaffLandingPage() {
   const { outletId, outlets, isLoadingOutlets } = useActiveOutlet()
   const outletName = outlets.find((outlet) => outlet.id === outletId)?.name
   const visibleItems = STAFF_NAV_ITEMS.filter((item) => canSeeStaffNavItem(item, user))
-  const canSeeTables = user.isSuperadmin || user.permissions.includes("dining-tables.view")
-  const canSeeKitchen = user.isSuperadmin || user.permissions.includes("kitchen-tickets.manage")
+  const canSeeTables = user.permissions.includes("dining-tables.view")
+  const canSeeKitchen = user.permissions.includes("kitchen-tickets.manage")
 
   const { data: occupiedTables, isLoading: tablesLoading } = useDiningTables(
     { outletId: outletId ?? undefined, status: "occupied", limit: 1 },

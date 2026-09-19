@@ -37,8 +37,8 @@ interface OrderRow {
  */
 export default function StaffOrdersPage() {
   const { outletId } = useActiveOutlet()
-  const { isSuperadmin, positionSlugs } = useCurrentUser()
-  const isWaiter = !isSuperadmin && positionSlugs.includes("waiter")
+  const { positionSlugs } = useCurrentUser()
+  const isWaiter = positionSlugs.includes("waiter")
   const [statusFilter, setStatusFilter] = useState<string>("all")
   const { data: orders, isLoading } = useOrders(
     {

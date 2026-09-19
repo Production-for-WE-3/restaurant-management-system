@@ -52,8 +52,8 @@ function defaultRange() {
 }
 
 export default function AuditLogsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("audit-logs.view")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("audit-logs.view")
 
   const [search, setSearch] = useState("")
   const [actionFilter, setActionFilter] = useState("all")

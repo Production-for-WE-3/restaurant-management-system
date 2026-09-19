@@ -105,7 +105,7 @@ export function canSeeStaffNavItem(
 ): boolean {
   const hasRequiredPermission = hasRoutePermission(user, item.requires)
   const isExcluded =
-    !user.isSuperadmin && item.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug))
+    item.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug))
   return hasRequiredPermission && !isExcluded
 }
 

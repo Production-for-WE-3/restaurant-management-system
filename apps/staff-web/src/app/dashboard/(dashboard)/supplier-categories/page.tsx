@@ -10,8 +10,8 @@ import { useCreateSupplierCategory, useDeleteSupplierCategory, useSupplierCatego
 import { usePageTitle } from "@rms/ui/use-page-title"
 
 export default function SupplierCategoriesPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("suppliers.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("suppliers.manage")
   const { data: categories, isLoading } = useSupplierCategories()
   const create = useCreateSupplierCategory()
   const remove = useDeleteSupplierCategory()

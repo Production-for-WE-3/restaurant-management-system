@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Skeleton } from "./skeleton"
 
 export function HeaderTenantSwitcher() {
-  const { activeTenantSlug, setActiveTenantSlug, tenants, isLoadingTenants, isSuperadmin } = useActiveOutlet()
+  const { activeTenantSlug, setActiveTenantSlug, tenants, isLoadingTenants } = useActiveOutlet()
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
 

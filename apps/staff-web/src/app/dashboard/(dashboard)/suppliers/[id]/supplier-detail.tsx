@@ -40,8 +40,8 @@ function formatPurchaseOrderDate(value: string | null | undefined) {
 
 export function SupplierDetail({ supplierId }: { supplierId: number }) {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("suppliers.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("suppliers.manage")
 
   const { data: history, isLoading } = useSupplier(supplierId)
   const showSkeleton = useDelayedLoading(isLoading)

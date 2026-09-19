@@ -41,8 +41,8 @@ const CATEGORIES: {
 ]
 
 export default function SettingsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("settings.view")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("settings.view")
   const { isLoading } = useAllSettings()
   const showSkeleton = useDelayedLoading(isLoading)
 

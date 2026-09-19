@@ -23,9 +23,9 @@ const defaultValues: ReservationSettingsInput = {
 }
 
 export default function ReservationSettingsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("settings.view")
-  const canManage = isSuperadmin || permissions.includes("settings.manage")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("settings.view")
+  const canManage = permissions.includes("settings.manage")
 
   const { data, isLoading } = useSettingsCategory<ReservationSettings>("reservation")
   const showSkeleton = useDelayedLoading(isLoading)

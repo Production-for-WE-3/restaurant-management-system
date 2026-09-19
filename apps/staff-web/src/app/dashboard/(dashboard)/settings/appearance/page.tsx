@@ -33,9 +33,9 @@ const defaultValues: AppearanceSettingsInput = {
 }
 
 export default function AppearanceSettingsPage() {
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canView = isSuperadmin || permissions.includes("settings.view")
-  const canManage = isSuperadmin || permissions.includes("settings.manage")
+  const { permissions } = useCurrentUser()
+  const canView = permissions.includes("settings.view")
+  const canManage = permissions.includes("settings.manage")
 
   const { data, isLoading } = useSettingsCategory<AppearanceSettings>("appearance")
   const showSkeleton = useDelayedLoading(isLoading)

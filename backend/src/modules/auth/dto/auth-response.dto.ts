@@ -10,8 +10,8 @@ export class AuthUserDto {
   @ApiProperty()
   email: string;
 
-  @ApiProperty()
-  isSuperadmin: boolean;
+  @ApiProperty({ nullable: true, type: Number })
+  tenantId: number | null;
 
   @ApiProperty({ enum: ['dashboard', 'staff'] })
   portal: 'dashboard' | 'staff';

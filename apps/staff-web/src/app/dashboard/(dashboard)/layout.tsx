@@ -43,8 +43,6 @@ export default async function DashboardLayout({ children }: { children: React.Re
           <RealtimeInvalidationProvider />
           <DashboardChrome
             permissions={user.permissions}
-            isSuperadmin={user.isSuperadmin}
-            positionSlugs={user.positionSlugs}
             allowed={allowed}
           >
             {children}

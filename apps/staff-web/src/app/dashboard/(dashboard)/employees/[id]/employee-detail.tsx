@@ -44,8 +44,8 @@ import { usePageTitle } from "@rms/ui/use-page-title"
 
 export function EmployeeDetail({ employeeId }: { employeeId: number }) {
   const router = useRouter()
-  const { permissions, isSuperadmin } = useCurrentUser()
-  const canManage = isSuperadmin || permissions.includes("employees.manage")
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("employees.manage")
 
   const { data: employee, isLoading } = useEmployee(employeeId)
   const showSkeleton = useDelayedLoading(isLoading)
@@ -261,7 +261,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
                   <FormItem>
                     <FormLabel>Outlet</FormLabel>
                     <Select
-                      items={(isSuperadmin ? superadminOutlets : outlets?.data)?.map((o) => ({ value: String(o.id), label: `${o.tenant?.name ? `${o.tenant.name} · ` : ""}${o.name}` }))}
+                      items={(false ? superadminOutlets : outlets?.data)?.map((o) => ({ value: String(o.id), label: `${o.tenant?.name ? `${o.tenant.name} · ` : ""}${o.name}` }))}
                       value={field.value ? String(field.value) : ""}
                       onValueChange={(v) => {
                         field.onChange(Number(v))
@@ -272,7 +272,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
                         <SelectValue placeholder="Select an outlet" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(isSuperadmin ? superadminOutlets : outlets?.data)?.map((o) => (
+                        {(false ? superadminOutlets : outlets?.data)?.map((o) => (
                           <SelectItem key={o.id} value={String(o.id)}>
                             {o.tenant?.name ? `${o.tenant.name} · ` : ""}{o.name}
                           </SelectItem>

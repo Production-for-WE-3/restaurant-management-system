@@ -17,12 +17,11 @@ import { useActiveOutlet } from "@rms/api-client/outlet/active-outlet-context"
  * here, same rule ActiveOutletProvider enforces underneath.
  */
 export function OutletRow() {
-  const { outletId, setOutletId, outlets, isLoadingOutlets, isSuperadmin } = useActiveOutlet()
+  const { outletId, setOutletId, outlets, isLoadingOutlets } = useActiveOutlet()
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => setMounted(true), [])
 
-  if (isSuperadmin) return null
   if (!mounted || isLoadingOutlets) return <Skeleton className="h-[52px] w-full" />
   if (outlets.length === 0) return null
 
