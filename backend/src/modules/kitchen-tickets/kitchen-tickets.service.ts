@@ -422,8 +422,16 @@ export class KitchenTicketsService {
     return updatedTicket;
   }
 
-  /** Recomputes a ticket's aggregate status/timers from its items' statuses. */
-  private async recomputeTicketStatus(
+  /**
+   * Recomputes a ticket's aggregate status/timers from its items' statuses —
+   * ticket-only, no order-level side effects. Split out of
+   * recomputeTicketStatus() so a caller updating several tickets on the same
+   * order at once (markOrderReadyItemsServed) can run these concurrently
+   * (each touches a distinct ticket row, so there's no shared state to race
+   * on) and then sync the order exactly once afterward, instead of once per
+   * ticket.
+   */
+  private async recomputeTicketStatusOnly(
     ticketId: number,
   ): Promise<KitchenTicket> {
     const ticket = await this.findOne(ticketId);
@@ -450,7 +458,14 @@ export class KitchenTicketsService {
       ticket.status = 'open';
     }
 
-    const saved = await this.ticketsRepository.save(ticket);
+    return this.ticketsRepository.save(ticket);
+  }
+
+  /** recomputeTicketStatusOnly() plus the order-level side effects — used by every single-ticket caller. */
+  private async recomputeTicketStatus(
+    ticketId: number,
+  ): Promise<KitchenTicket> {
+    const saved = await this.recomputeTicketStatusOnly(ticketId);
     // Single choke point for every item-level mutation (single/bulk
     // transition, recall, mark-delivered): first walks Order.status forward
     // to match how far its items have collectively progressed (item status
@@ -501,16 +516,26 @@ export class KitchenTicketsService {
         );
     });
 
+    // Every ticket here belongs to the same order, so recomputing them via
+    // the single-ticket recomputeTicketStatus() one at a time would call
+    // OrdersService#syncStatusFromItems for that same order N times over
+    // (each one a BFS plus its own updateStatus() writes) — wasteful, and if
+    // ever parallelized directly, a race on the same order row. Instead,
+    // update each ticket's own row concurrently (distinct rows, nothing
+    // shared to race on) via recomputeTicketStatusOnly(), then sync the
+    // order exactly once at the end.
     const ticketIds = [...new Set(eligible.map((item) => item.ticketId))];
-    const tickets: KitchenTicket[] = [];
-    for (const ticketId of ticketIds) {
-      const updated = await this.recomputeTicketStatus(ticketId);
+    const tickets = await Promise.all(
+      ticketIds.map((ticketId) => this.recomputeTicketStatusOnly(ticketId)),
+    );
+    for (const updated of tickets) {
       this.gateway.notifyTicketUpdated(updated);
-      for (const item of eligible.filter((i) => i.ticketId === ticketId)) {
+      for (const item of eligible.filter((i) => i.ticketId === updated.id)) {
         this.gateway.notifyItemUpdated(updated.outletId, item);
       }
-      tickets.push(updated);
     }
+    await this.ordersService.syncStatusFromItems(orderId, null);
+    await this.ordersService.notifyGuestByOrderId(orderId);
     await this.ordersService.maybeAdvanceToServed(orderId, null);
     return tickets;
   }
