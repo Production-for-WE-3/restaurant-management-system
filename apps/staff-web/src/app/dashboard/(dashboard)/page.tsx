@@ -112,52 +112,17 @@ function ErrorState({ retry }: { retry: () => void }) {
 		</div>
 	);
 }
-function LoadingDashboard() {
-	return (
-		<div className="dashboard-page page-shell dash-loading-page">
-			<div className="dash-skeleton dash-skeleton-heading" />
-			<div className="dash-stat-grid">
-				{Array.from({ length: 4 }, (_, i) => (
-					<div className="dash-stat dash-skeleton-stat" key={i}>
-						<i />
-						<span />
-						<b />
-						<small />
-					</div>
-				))}
-			</div>
-			<div className="dash-main-grid">
-				<Panel>
-					<div className="dash-skeleton dash-skeleton-chart" />
-				</Panel>
-				<Panel>
-					<div className="dash-skeleton dash-skeleton-orders" />
-				</Panel>
-			</div>
-			<Panel className="items-panel">
-				<div className="dash-skeleton dash-skeleton-items" />
-			</Panel>
-			<div className="dash-main-grid lower-grid">
-				<Panel>
-					<div className="dash-skeleton dash-skeleton-lower" />
-				</Panel>
-				<Panel>
-					<div className="dash-skeleton dash-skeleton-lower" />
-				</Panel>
-			</div>
-			<Panel className="activity-panel">
-				<div className="dash-skeleton dash-skeleton-activity" />
-			</Panel>
-		</div>
-	);
-}
 
 export default function DashboardPage() {
 	const user = useCurrentUser();
 	const now = useClock();
 	usePageTitle("Dashboard");
-	const { outletId, isLoadingOutlets } = useActiveOutlet();
-	const enabled = !isLoadingOutlets && outletId !== null;
+	// outletId is seeded synchronously from CurrentUser.outletIds[0] in the
+	// outlet context — no need to wait for isLoadingOutlets (the full outlet
+	// list fetch used by the switcher UI). All dashboard queries can start
+	// the moment the page mounts.
+	const { outletId } = useActiveOutlet();
+	const enabled = outletId !== null;
 	const todayKey = now.toDateString();
 
 	const range = useMemo(
@@ -186,49 +151,46 @@ export default function DashboardPage() {
 	const tables = useDiningTables({ outletId: outletId ?? undefined, limit: 100 }, { enabled });
 	const kitchen = useKdsBootstrap(outletId);
 	const analytics = useAnalyticsDashboard({ ...range, domainLimit: 1 }, { enabled });
-	const queries = [stats, charts, orders, tables, kitchen, analytics];
-	const coreQueries = [stats, charts, orders, tables];
-	const retry = () => queries.forEach((query) => void query.refetch());
-	if (isLoadingOutlets || coreQueries.some((query) => query.isLoading)) return <LoadingDashboard />;
-	if (coreQueries.some((query) => query.isError) || !stats.data || !charts.data || !orders.data || !tables.data)
-		return (
-			<div className="dashboard-page">
-				<ErrorState retry={retry} />
-			</div>
-		);
 
-	const statData: Stat[] = [
-		{
-			label: "Total Orders",
-			value: String(stats.data.salesOverview.orderCount),
-			icon: ShoppingBag,
-			direction: "up",
-		},
-		{
-			label: "Total Revenue",
-			value: money(stats.data.salesOverview.grandTotal),
-			icon: CircleDollarSign,
-			direction: "up",
-		},
-		{
-			label: "Active Tables",
-			value: `${stats.data.activeTableSessions} / ${tables.data.data.length}`,
-			icon: LayoutGrid,
-			direction: "up",
-		},
-		{
-			label: "Pending Orders",
-			value: String(
-				stats.data.ordersOverview
-					.filter((row) => ["pending", "accepted", "preparing", "partially_ready"].includes(row.status))
-					.reduce((sum, row) => sum + row.count, 0),
-			),
-			icon: Clock3,
-			direction: "down",
-		},
-	];
-	const trend = charts.data.revenueTrend;
-	const maxRevenue = Math.max(...trend.map((point) => point.grandTotal), 0);
+	const allQueries = [stats, charts, orders, tables, kitchen, analytics];
+	const retry = () => allQueries.forEach((q) => void q.refetch());
+
+	// Derived data (safe to compute when data is present)
+	const statData: Stat[] = stats.data
+		? [
+				{
+					label: "Total Orders",
+					value: String(stats.data.salesOverview.orderCount),
+					icon: ShoppingBag,
+					direction: "up",
+				},
+				{
+					label: "Total Revenue",
+					value: money(stats.data.salesOverview.grandTotal),
+					icon: CircleDollarSign,
+					direction: "up",
+				},
+				{
+					label: "Active Tables",
+					value: `${stats.data.activeTableSessions} / ${tables.data?.data.length ?? "…"}`,
+					icon: LayoutGrid,
+					direction: "up",
+				},
+				{
+					label: "Pending Orders",
+					value: String(
+						stats.data.ordersOverview
+							.filter((row) => ["pending", "accepted", "preparing", "partially_ready"].includes(row.status))
+							.reduce((sum, row) => sum + row.count, 0),
+					),
+					icon: Clock3,
+					direction: "down",
+				},
+			]
+		: [];
+
+	const trend = charts.data?.revenueTrend ?? [];
+	const maxRevenue = Math.max(...trend.map((p) => p.grandTotal), 0);
 	const points =
 		maxRevenue > 0
 			? trend
@@ -238,14 +200,16 @@ export default function DashboardPage() {
 					)
 					.join(" ")
 			: "";
-	const tableCounts = tables.data.data.reduce<Record<string, number>>((acc, table) => {
+
+	const tableCounts = (tables.data?.data ?? []).reduce<Record<string, number>>((acc, table) => {
 		acc[table.status] = (acc[table.status] ?? 0) + 1;
 		return acc;
 	}, {});
-	const tableTotal = tables.data.data.length;
-	const occupied = tableCounts.occupied ?? stats.data.activeTableSessions;
+	const tableTotal = tables.data?.data.length ?? 0;
+	const occupied = tableCounts.occupied ?? stats.data?.activeTableSessions ?? 0;
 	const queue = kitchen.data?.tickets.slice(0, 5) ?? [];
-	const bestSelling = charts.data.bestSellingFoods.slice(0, 4);
+	const bestSelling = charts.data?.bestSellingFoods.slice(0, 4) ?? [];
+
 	return (
 		<div className="dashboard-page page-shell">
 			<div className="dash-welcome">
@@ -259,94 +223,126 @@ export default function DashboardPage() {
 					</p>
 				</div>
 			</div>
+
+			{/* ── Stat cards — each shows immediately when stats query resolves ── */}
 			<div className="dash-stat-grid">
-				{statData.map(({ label, value, icon: Icon, direction }) => (
-					<div className="dash-stat" key={label}>
-						<div className="dash-stat-icon">
-							<Icon />
-						</div>
-						<span>{label}</span>
-						<strong>{value}</strong>
-						<small className={direction === "down" ? "negative" : "positive"}>
-							{direction === "down" ? <ArrowDownRight /> : <ArrowUpRight />} Today
-						</small>
-					</div>
-				))}
+				{stats.isLoading
+					? Array.from({ length: 4 }, (_, i) => (
+							<div className="dash-stat dash-skeleton-stat" key={i}>
+								<i /><span /><b /><small />
+							</div>
+						))
+					: stats.isError
+						? <ErrorState retry={retry} />
+						: statData.map(({ label, value, icon: Icon, direction }) => (
+								<div className="dash-stat" key={label}>
+									<div className="dash-stat-icon">
+										<Icon />
+									</div>
+									<span>{label}</span>
+									<strong>{value}</strong>
+									<small className={direction === "down" ? "negative" : "positive"}>
+										{direction === "down" ? <ArrowDownRight /> : <ArrowUpRight />} Today
+									</small>
+								</div>
+							))}
 			</div>
+
 			<div className="dash-main-grid">
+				{/* ── Sales chart — independent of orders/tables ── */}
 				<Panel className="sales-panel">
 					<Heading
 						title="Sales Overview"
 						subtitle={
-							trend.length
-								? `${trend.length} revenue data point${trend.length === 1 ? "" : "s"}`
-								: "No sales data for today"
+							charts.isLoading
+								? undefined
+								: trend.length
+									? `${trend.length} revenue data point${trend.length === 1 ? "" : "s"}`
+									: "No sales data for today"
 						}
 					/>
-					<div className={`chart-wrap ${trend.length ? "" : "is-empty"}`}>
-						<div className="chart-y">
-							<span>{money(maxRevenue)}</span>
-							<span>{money(maxRevenue * 0.75)}</span>
-							<span>{money(maxRevenue * 0.5)}</span>
-							<span>{money(maxRevenue * 0.25)}</span>
-							<span>NPR 0</span>
+					{charts.isLoading ? (
+						<div className="dash-skeleton dash-skeleton-chart" />
+					) : charts.isError ? (
+						<ErrorState retry={() => void charts.refetch()} />
+					) : (
+						<div className={`chart-wrap ${trend.length ? "" : "is-empty"}`}>
+							<div className="chart-y">
+								<span>{money(maxRevenue)}</span>
+								<span>{money(maxRevenue * 0.75)}</span>
+								<span>{money(maxRevenue * 0.5)}</span>
+								<span>{money(maxRevenue * 0.25)}</span>
+								<span>NPR 0</span>
+							</div>
+							<svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-label="Sales overview chart">
+								<defs>
+									<linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1">
+										<stop offset="0" stopColor="#f5b51b" stopOpacity=".42" />
+										<stop offset="1" stopColor="#f5b51b" stopOpacity=".03" />
+									</linearGradient>
+								</defs>
+								{points && (
+									<>
+										<polyline points={`${points} 800,220 0,220`} fill="url(#salesFill)" />
+										<polyline
+											points={points}
+											fill="none"
+											stroke="#f5b51b"
+											strokeWidth="3"
+											strokeLinecap="round"
+											strokeLinejoin="round"
+										/>
+									</>
+								)}
+							</svg>
+							<div className="chart-x">
+								{trend.map((point) => (
+									<span key={point.date}>{point.date}</span>
+								))}
+							</div>
+							{!trend.length && <span className="dash-empty-chart">No sales data for today</span>}
 						</div>
-						<svg viewBox="0 0 800 220" preserveAspectRatio="none" aria-label="Sales overview chart">
-							<defs>
-								<linearGradient id="salesFill" x1="0" x2="0" y1="0" y2="1">
-									<stop offset="0" stopColor="#f5b51b" stopOpacity=".42" />
-									<stop offset="1" stopColor="#f5b51b" stopOpacity=".03" />
-								</linearGradient>
-							</defs>
-							{points && (
-								<>
-									<polyline points={`${points} 800,220 0,220`} fill="url(#salesFill)" />
-									<polyline
-										points={points}
-										fill="none"
-										stroke="#f5b51b"
-										strokeWidth="3"
-										strokeLinecap="round"
-										strokeLinejoin="round"
-									/>
-								</>
-							)}
-						</svg>
-						<div className="chart-x">
-							{trend.map((point) => (
-								<span key={point.date}>{point.date}</span>
-							))}
-						</div>
-						{!trend.length && <span className="dash-empty-chart">No sales data for today</span>}
-					</div>
+					)}
 				</Panel>
+
+				{/* ── Recent orders — independent of chart ── */}
 				<Panel>
 					<Heading title="Recent Orders" subtitle="Latest orders across the active outlet" />
-					<div className="dash-table">
-						<div className="dash-table-head">
-							<span>Table #</span>
-							<span>Customer</span>
-							<span>Time</span>
-							<span>Status</span>
+					{orders.isLoading ? (
+						<div className="dash-skeleton dash-skeleton-orders" />
+					) : orders.isError ? (
+						<ErrorState retry={() => void orders.refetch()} />
+					) : (
+						<div className="dash-table">
+							<div className="dash-table-head">
+								<span>Table #</span>
+								<span>Customer</span>
+								<span>Time</span>
+								<span>Status</span>
+							</div>
+							{orders.data!.data.length ? (
+								orders.data!.data.map((order) => (
+									<div className="dash-table-row" key={order.id}>
+										<span>{order.tableName ?? order.orderNumber}</span>
+										<span>{order.customerName ?? "—"}</span>
+										<span>{time(order.createdAt)}</span>
+										<Status>{order.status}</Status>
+									</div>
+								))
+							) : (
+								<div className="dash-empty-row">No orders for today</div>
+							)}
 						</div>
-						{orders.data.data.length ? (
-							orders.data.data.map((order) => (
-								<div className="dash-table-row" key={order.id}>
-									<span>{order.tableName ?? order.orderNumber}</span>
-									<span>{order.customerName ?? "—"}</span>
-									<span>{time(order.createdAt)}</span>
-									<Status>{order.status}</Status>
-								</div>
-							))
-						) : (
-							<div className="dash-empty-row">No orders for today</div>
-						)}
-					</div>
+					)}
 				</Panel>
 			</div>
+
+			{/* ── Top selling items — independent ── */}
 			<Panel className="items-panel">
 				<Heading title="Top Selling Items" action="" />
-				{bestSelling.length ? (
+				{charts.isLoading ? (
+					<div className="dash-skeleton dash-skeleton-items" />
+				) : bestSelling.length ? (
 					<div className="item-grid">
 						{bestSelling.map((item) => (
 							<Link href={`/dashboard/foods/${item.foodId}`} className="selling-item" key={item.foodId}>
@@ -364,47 +360,57 @@ export default function DashboardPage() {
 					<div className="dash-empty-row">No items sold today</div>
 				)}
 			</Panel>
+
 			<div className="dash-main-grid lower-grid">
+				{/* ── Table occupancy — independent of orders/chart ── */}
 				<Panel>
 					<Heading title="Table Occupancy" subtitle="Live status of tables in the restaurant" />
-					<div className="occupancy">
-						<div
-							className="donut"
-							style={{
-								background: `conic-gradient(#f5b51b 0 ${tableTotal ? (occupied / tableTotal) * 100 : 0}%,var(--donut-rest) 0)`,
-							}}
-						>
-							<strong>{tableTotal ? Math.round((occupied / tableTotal) * 100) : 0}%</strong>
-							<span>Occupied</span>
-						</div>
-						<div className="legend">
-							<span>
-								<i className="green" />
-								Available <b>{tableCounts.available ?? 0}</b>
-							</span>
-							<span>
-								<i className="gold" />
-								Occupied <b>{occupied}</b>
-							</span>
-							<span>
-								<i className="blue" />
-								Cleaning <b>{tableCounts.cleaning ?? 0}</b>
-							</span>
-							<span>
-								<i className="red" />
-								Reserved <b>{tableCounts.reserved ?? 0}</b>
-							</span>
-						</div>
-						<div className="table-grid">
-							{tables.data.data.map((table) => (
-								<span key={table.id} className={table.status}>
-									{table.name}
-									<small>{table.status}</small>
+					{tables.isLoading ? (
+						<div className="dash-skeleton dash-skeleton-lower" />
+					) : tables.isError ? (
+						<ErrorState retry={() => void tables.refetch()} />
+					) : (
+						<div className="occupancy">
+							<div
+								className="donut"
+								style={{
+									background: `conic-gradient(#f5b51b 0 ${tableTotal ? (occupied / tableTotal) * 100 : 0}%,var(--donut-rest) 0)`,
+								}}
+							>
+								<strong>{tableTotal ? Math.round((occupied / tableTotal) * 100) : 0}%</strong>
+								<span>Occupied</span>
+							</div>
+							<div className="legend">
+								<span>
+									<i className="green" />
+									Available <b>{tableCounts.available ?? 0}</b>
 								</span>
-							))}
+								<span>
+									<i className="gold" />
+									Occupied <b>{occupied}</b>
+								</span>
+								<span>
+									<i className="blue" />
+									Cleaning <b>{tableCounts.cleaning ?? 0}</b>
+								</span>
+								<span>
+									<i className="red" />
+									Reserved <b>{tableCounts.reserved ?? 0}</b>
+								</span>
+							</div>
+							<div className="table-grid">
+								{tables.data!.data.map((table) => (
+									<span key={table.id} className={table.status}>
+										{table.name}
+										<small>{table.status}</small>
+									</span>
+								))}
+							</div>
 						</div>
-					</div>
+					)}
 				</Panel>
+
+				{/* ── Kitchen queue — independent ── */}
 				<Panel>
 					<Heading title="Kitchen Queue" subtitle="Open and preparing tickets, oldest first" />
 					<div className="queue">
@@ -440,6 +446,8 @@ export default function DashboardPage() {
 					</div>
 				</Panel>
 			</div>
+
+			{/* ── Domain activity — independent, lowest priority ── */}
 			<Panel className="activity-panel">
 				<Heading
 					title="Today's domain activity"
