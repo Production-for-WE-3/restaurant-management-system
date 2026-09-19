@@ -68,8 +68,10 @@ export function OrderDetail({
   // Cashiers can record payments from this read-only staff view too — every
   // other staff-shell role (waiter, bartender, cook, host) stays view-only
   // here and settles bills through the POS checkout flow instead.
-  const { isSuperadmin, positionSlugs } = useCurrentUser()
-  const isCashier = isSuperadmin || positionSlugs.includes("cashier")
+  // Gate on the actual backend permission (order-payments.manage), not the
+  // literal "cashier" position slug — slugs are free-text and admin-defined.
+  const { isSuperadmin, permissions } = useCurrentUser()
+  const isCashier = isSuperadmin || permissions.includes("order-payments.manage")
   const canRecordPayment = !isReadOnly || isCashier
 
   if (showSkeleton) return <DetailPageSkeleton fields={6} />

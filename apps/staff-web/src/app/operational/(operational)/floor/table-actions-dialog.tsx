@@ -61,10 +61,11 @@ export function TableActionsDialog({
   // Cashiers get everything waiters get (order-taking, transfer, end session,
   // reservations) plus cashier-only tools: customer assignment, in-dialog
   // checkout, and calling a waiter on the guest's behalf.
-  // Superadmins have unrestricted operational access, so they should see the
-  // same billing/customer tools as a cashier even when they do not carry the
-  // cashier role assignment themselves.
-  const isCashier = user.positionSlugs.includes("cashier")
+  // Gate on the actual backend permission (order-payments.manage), not the
+  // literal "cashier" position slug — slugs are free-text and admin-defined,
+  // so a cashier-equivalent position with a different slug would otherwise
+  // be denied these tools despite holding the permission.
+  const isCashier = user.permissions.includes("order-payments.manage")
   // Waiters take and transfer orders but don't close out a table — that's
   // the cashier's/manager's call once payment is settled.
   const isWaiter = user.positionSlugs.includes("waiter")

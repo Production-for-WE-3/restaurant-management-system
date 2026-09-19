@@ -72,5 +72,12 @@ export function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  // _next/webpack-hmr must stay excluded too: it's a WebSocket upgrade
+  // request, and this proxy redirecting it to /login (as it would any other
+  // unauthenticated non-API path) returns a redirect instead of a 101
+  // response. In dev, Next's client bootstrap calls hydrate() from inside
+  // its HMR-socket setup, so that failed upgrade throws before hydrateRoot()
+  // ever runs — the page never becomes interactive (forms silently fall
+  // back to native submission) even though it looks fully rendered.
+  matcher: ["/((?!_next/static|_next/image|_next/webpack-hmr|favicon.ico).*)"],
 }

@@ -123,7 +123,11 @@ function EditableCart({
   const user = useCurrentUser()
   // Waiters take orders but don't collect payment — that's the cashier's
   // job at the table (see floor/table-actions-dialog for the same split).
-  const canRecordPayment = user.positionSlugs.includes("cashier")
+  // Gate on the actual backend permission (order-payments.manage), not the
+  // literal "cashier" position slug — slugs are free-text and admin-defined,
+  // so a cashier-equivalent position with a different slug would otherwise
+  // be denied the Pay UI despite holding the permission.
+  const canRecordPayment = user.permissions.includes("order-payments.manage")
   const localCart = useLocalCartContext()
   const addItemsBatch = useAddOrderItemsBatch(orderId)
   const addItemsBatchOverride = useAddOrderItemsBatch(orderId, { closedHoursOverride: true })
