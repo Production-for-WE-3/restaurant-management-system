@@ -1547,7 +1547,7 @@ export class OrdersService {
 
     if (!options.deferTotals) await this.recalculateTotals(orderId);
     try {
-      await this.recalculateReservations(saved.id, order);
+      await this.recalculateReservations(saved.id, order, food);
     } catch (error) {
       if (inserted) {
         // Fresh row — its ingredient requirement couldn't be reserved.
@@ -1593,7 +1593,7 @@ export class OrdersService {
       for (const { addons, ...itemDto } of items) {
       const item = await this.addItem(orderId, itemDto, { order, departments, deferTotals: true });
       for (const addon of addons ?? []) {
-        await this.addItemAddon(item.id, addon);
+        await this.addItemAddon(item.id, addon, { order, deferTotals: true });
       }
       saved.push(item);
       }
@@ -1730,9 +1730,10 @@ export class OrdersService {
   async addItemAddon(
     orderItemId: number,
     dto: CreateOrderItemAddonDto,
+    options: { order?: Order; deferTotals?: boolean } = {},
   ): Promise<OrderItemAddon> {
     const item = await this.findItem(orderItemId);
-    const order = await this.findOne(item.orderId);
+    const order = options.order ?? (await this.findOne(item.orderId));
     await this.operatingHoursService.assertOperational(order.outletId);
     OrdersService.assertMutable(order);
     const addon = await this.addonsService.findOne(dto.addonId);
@@ -1748,12 +1749,12 @@ export class OrdersService {
       }),
     );
 
-    await this.recalculateTotals(item.orderId);
+    if (!options.deferTotals) await this.recalculateTotals(item.orderId);
     try {
-      await this.recalculateReservations(orderItemId);
+      await this.recalculateReservations(orderItemId, order);
     } catch (error) {
       await this.orderItemAddonsRepository.remove(saved);
-      await this.recalculateTotals(item.orderId);
+      if (!options.deferTotals) await this.recalculateTotals(item.orderId);
       throw error;
     }
     return saved;
@@ -2122,11 +2123,15 @@ export class OrdersService {
 
   private async resolveRequiredIngredients(
     item: OrderItem,
+    knownFood?: Food,
   ): Promise<Map<number, number>> {
     const required = new Map<number, number>();
 
+    // Reuse the caller's already-loaded food when it's the same row (addItem
+    // always has one) instead of re-fetching it — addItem's own Promise.all
+    // already paid for this exact query once.
     const [food, itemAddons] = await Promise.all([
-      this.foodsService.findOne(item.foodId),
+      knownFood && knownFood.id === item.foodId ? Promise.resolve(knownFood) : this.foodsService.findOne(item.foodId),
       this.orderItemAddonsRepository.find({ where: { orderItemId: item.id } }),
     ]);
 
@@ -2167,9 +2172,9 @@ export class OrdersService {
    * `reservedQuantity` by the delta per ingredient; a positive delta can
    * throw (insufficient available stock).
    */
-  private async recalculateReservations(orderItemId: number, knownOrder?: Order): Promise<void> {
+  private async recalculateReservations(orderItemId: number, knownOrder?: Order, knownFood?: Food): Promise<void> {
     const item = await this.findItem(orderItemId);
-    const required = await this.resolveRequiredIngredients(item);
+    const required = await this.resolveRequiredIngredients(item, knownFood);
 
     const existing = await this.reservationsRepository.find({
       where: { orderItemId, status: 'reserved' },

@@ -293,24 +293,40 @@ function EditableCart({
   return (
     <div className="flex w-full flex-col gap-3">
       <h2 className="text-sm font-semibold">Cart</h2>
-      <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+      <div className="max-h-[45vh] space-y-3 overflow-y-auto">
         {isLoading && <ListSkeleton count={3} />}
         {!isLoading && (items?.data.length ?? 0) === 0 && localCart.items.length === 0 && (
           <p className="text-sm text-muted-foreground">No items yet — tap a food to add it.</p>
         )}
-        {localCart.items.map((item) => (
-          <LocalCartItemRow key={item.localId} item={item} />
-        ))}
-        {items?.data.map((item) => (
-          <CartItemRow
-            key={item.id}
-            orderId={orderId}
-            item={item}
-            foodName={foodName(item.foodId)}
-            variantName={variantName(item.foodVariantId)}
-            canCancelAfterServed={canRecordPayment}
-          />
-        ))}
+        {localCart.items.length > 0 && (
+          <div className="space-y-2">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+              In cart — not sent yet ({localCart.items.length})
+            </h3>
+            {localCart.items.map((item) => (
+              <LocalCartItemRow key={item.localId} item={item} />
+            ))}
+          </div>
+        )}
+        {(items?.data.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            {localCart.items.length > 0 && (
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                Placed order ({items?.data.length})
+              </h3>
+            )}
+            {items?.data.map((item) => (
+              <CartItemRow
+                key={item.id}
+                orderId={orderId}
+                item={item}
+                foodName={foodName(item.foodId)}
+                variantName={variantName(item.foodVariantId)}
+                canCancelAfterServed={canRecordPayment}
+              />
+            ))}
+          </div>
+        )}
       </div>
       {heldCount > 0 && (
         <>
