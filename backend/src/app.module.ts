@@ -327,6 +327,16 @@ export class AppModule implements NestModule, OnApplicationBootstrap, OnModuleDe
       const queryRunner: any = createQueryRunner(mode);
       const rawQuery = queryRunner.query.bind(queryRunner);
       queryRunner.query = async (query: string, parameters?: unknown[], useStructuredResult?: boolean) => {
+        // Transaction-control statements (BEGIN/COMMIT/ROLLBACK/SAVEPOINT/...)
+        // must run standalone. Postgres allows ROLLBACK/ROLLBACK TO SAVEPOINT
+        // even once a transaction is aborted — that's how callers recover from
+        // it — but prepending set_config ahead of them breaks that recovery:
+        // set_config itself gets rejected with "current transaction is aborted",
+        // so the ROLLBACK never runs, the transaction stays aborted, and the
+        // connection can go back to the pool still poisoned for the next query.
+        if (/^\s*(begin|commit|rollback|savepoint|release)\b/i.test(query)) {
+          return rawQuery(query, parameters, useStructuredResult);
+        }
         const tenantId = this.tenantContext.getTenantId();
         await rawQuery(`SELECT set_config('app.tenant_id', $1, false)`, [tenantId === null ? '' : String(tenantId)]);
         return rawQuery(query, parameters, useStructuredResult);
