@@ -49,4 +49,41 @@ export function applyItemStatus(
   return withItems(bootstrap, ticketId, (item) => (item.id !== itemId ? item : { ...item, status }))
 }
 
+/**
+ * Order-level bulk actions (OrdersService#markOrderReadyItemsServed /
+ * markOrderReadyItemServed) sweep every ticket belonging to the order, not
+ * just one — unlike applyBulkTransition/applyItemStatus above, which are
+ * scoped to a single ticketId.
+ */
+function withOrderTickets(
+  bootstrap: KdsBootstrap,
+  orderId: number,
+  mapItem: (item: KitchenTicketItem) => KitchenTicketItem,
+): KdsBootstrap {
+  return {
+    ...bootstrap,
+    tickets: bootstrap.tickets.map((ticket) =>
+      ticket.orderId !== orderId ? ticket : { ...ticket, items: (ticket.items ?? []).map(mapItem) },
+    ),
+  }
+}
+
+/** Optimistic version of "Mark Delivered" for every ready item across an order's tickets. */
+export function applyOrderReadyItemsServed(bootstrap: KdsBootstrap, orderId: number): KdsBootstrap {
+  return withOrderTickets(bootstrap, orderId, (item) =>
+    item.status === "ready" ? { ...item, status: "served" } : item,
+  )
+}
+
+/** Optimistic version of delivering one ready ticket item (by its id) on an order. */
+export function applyOrderTicketItemServed(
+  bootstrap: KdsBootstrap,
+  orderId: number,
+  ticketItemId: number,
+): KdsBootstrap {
+  return withOrderTickets(bootstrap, orderId, (item) =>
+    item.id === ticketItemId ? { ...item, status: "served" } : item,
+  )
+}
+
 export { ITEM_STATUS_TRANSITIONS }

@@ -3,6 +3,8 @@ import { apiClient } from "../client"
 import { queuableApiClient } from "../offline/queuable-api-client"
 import { toQueryString, type PaginatedResponse } from "../types"
 import { queryKeys } from "../query-keys"
+import { applyOrderReadyItemsServed, applyOrderTicketItemServed } from "../kitchen/optimistic-bootstrap"
+import type { KdsBootstrap } from "./use-kitchen-tickets"
 import { useKdsSocketConnected } from "../realtime/kds-socket"
 import { patchDiningTableStatus } from "./use-dining-tables"
 import { findCachedDiningTableId } from "./use-table-sessions"
@@ -262,6 +264,20 @@ export function useUpdateOrderStatus(id: number, options: OperationalMutationOpt
   return useMutation({
     mutationFn: (status: string) =>
       apiClient<Order>(`/orders/${id}/status`, { method: "PATCH", body: JSON.stringify({ status }), headers: operationalMutationHeaders(options.closedHoursOverride) }),
+    // The status badge (POS header, order list, kitchen/waiter screens) flips
+    // the instant staff tap the action instead of sitting on the old status
+    // until the round trip resolves — rolled back on error.
+    onMutate: async (status) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.orders.detail(id) })
+      const previous = queryClient.getQueryData<Order>(queryKeys.orders.detail(id))
+      queryClient.setQueryData<Order>(queryKeys.orders.detail(id), (old) =>
+        old ? { ...old, status } : old,
+      )
+      return { previous }
+    },
+    onError: (_err, _status, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.orders.detail(id), context.previous)
+    },
     onSuccess: (order, status) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.lists() })
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(id) })
@@ -289,7 +305,34 @@ export function useSendOrderToKitchen(orderId: number, options: OperationalMutat
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (itemIds: number[]) => apiClient<{ orderId: number; itemIds: number[]; ticketIds: number[] }>(`/orders/${orderId}/send-to-kitchen`, { method: "POST", body: JSON.stringify({ itemIds }), headers: operationalMutationHeaders(options.closedHoursOverride) }),
-    onSuccess: () => {
+    // "Place order" — the cart's items flip to sent immediately instead of
+    // waiting on the round trip; rolled back on error. (Exact target status
+    // — 'ready' for ready-made items vs 'sent_to_kitchen' for kitchen-bound
+    // ones — is a server routing decision, so this optimistically assumes
+    // the common case and the settle-time refetch below corrects it either
+    // way.)
+    onMutate: async (itemIds) => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.orders.items(orderId) })
+      const previous = queryClient.getQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId))
+      const idSet = new Set(itemIds)
+      queryClient.setQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId), (old) =>
+        old
+          ? {
+              ...old,
+              data: old.data.map((item) =>
+                idSet.has(item.id) && item.status === "stock_reserved"
+                  ? { ...item, status: "sent_to_kitchen" }
+                  : item,
+              ),
+            }
+          : old,
+      )
+      return { previous }
+    },
+    onError: (_err, _itemIds, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.orders.items(orderId), context.previous)
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.items(orderId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(orderId) })
     },
@@ -300,7 +343,29 @@ export function useFireHeldItems(orderId: number, options: OperationalMutationOp
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: () => apiClient<unknown>(`/orders/${orderId}/fire-held-items`, { method: "POST", headers: operationalMutationHeaders(options.closedHoursOverride) }),
-    onSuccess: () => {
+    // Held items flip to sent immediately instead of waiting on the round
+    // trip — same idea as useSendOrderToKitchen. Rolled back on error.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.orders.items(orderId) })
+      const previous = queryClient.getQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId))
+      queryClient.setQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId), (old) =>
+        old
+          ? {
+              ...old,
+              data: old.data.map((item) =>
+                item.isHeld && item.status === "stock_reserved"
+                  ? { ...item, isHeld: false, status: "sent_to_kitchen" }
+                  : item,
+              ),
+            }
+          : old,
+      )
+      return { previous }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(queryKeys.orders.items(orderId), context.previous)
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.items(orderId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(orderId) })
     },
@@ -313,7 +378,41 @@ export function useMarkOrderReadyItemsServed(orderId: number, outletId: number |
   return useMutation({
     mutationFn: () =>
       apiClient<unknown>(`/orders/${orderId}/mark-ready-items-served`, { method: "POST" }),
-    onSuccess: () => {
+    // Every 'ready' item flips to 'served' the instant staff tap the
+    // button — this is the highest-frequency waiter action on a busy floor,
+    // so it shouldn't sit waiting on the round trip. Patches both the order's
+    // own item list AND the KDS bootstrap (the ready queue screen renders
+    // off the latter, not the former). Rolled back on error.
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: queryKeys.orders.items(orderId) })
+      const previousItems = queryClient.getQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId))
+      queryClient.setQueryData<PaginatedResponse<OrderItem>>(queryKeys.orders.items(orderId), (old) =>
+        old
+          ? {
+              ...old,
+              data: old.data.map((item) => (item.status === "ready" ? { ...item, status: "served" } : item)),
+            }
+          : old,
+      )
+
+      let previousBootstrap: KdsBootstrap | undefined
+      if (outletId) {
+        const bootstrapKey = queryKeys.kitchenTickets.bootstrap(outletId)
+        await queryClient.cancelQueries({ queryKey: bootstrapKey })
+        previousBootstrap = queryClient.getQueryData<KdsBootstrap>(bootstrapKey)
+        if (previousBootstrap) {
+          queryClient.setQueryData<KdsBootstrap>(bootstrapKey, applyOrderReadyItemsServed(previousBootstrap, orderId))
+        }
+      }
+      return { previousItems, previousBootstrap }
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previousItems) queryClient.setQueryData(queryKeys.orders.items(orderId), context.previousItems)
+      if (outletId && context?.previousBootstrap) {
+        queryClient.setQueryData(queryKeys.kitchenTickets.bootstrap(outletId), context.previousBootstrap)
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.items(orderId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(orderId) })
       if (outletId) {
@@ -329,7 +428,27 @@ export function useMarkOrderReadyItemServed(orderId: number, outletId: number | 
   return useMutation({
     mutationFn: (ticketItemId: number) =>
       apiClient<unknown>(`/orders/${orderId}/mark-ready-item-served/${ticketItemId}`, { method: "POST" }),
-    onSuccess: () => {
+    // Same idea as useMarkOrderReadyItemsServed, scoped to the one ticket
+    // item the ready-queue card is delivering.
+    onMutate: async (ticketItemId) => {
+      if (!outletId) return {}
+      const bootstrapKey = queryKeys.kitchenTickets.bootstrap(outletId)
+      await queryClient.cancelQueries({ queryKey: bootstrapKey })
+      const previousBootstrap = queryClient.getQueryData<KdsBootstrap>(bootstrapKey)
+      if (previousBootstrap) {
+        queryClient.setQueryData<KdsBootstrap>(
+          bootstrapKey,
+          applyOrderTicketItemServed(previousBootstrap, orderId, ticketItemId),
+        )
+      }
+      return { previousBootstrap }
+    },
+    onError: (_err, _ticketItemId, context) => {
+      if (outletId && context?.previousBootstrap) {
+        queryClient.setQueryData(queryKeys.kitchenTickets.bootstrap(outletId), context.previousBootstrap)
+      }
+    },
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.items(orderId) })
       queryClient.invalidateQueries({ queryKey: queryKeys.orders.detail(orderId) })
       if (outletId) queryClient.invalidateQueries({ queryKey: queryKeys.kitchenTickets.bootstrap(outletId) })
