@@ -28,7 +28,8 @@ export class PoolMetrics implements OnModuleInit {
   private instrumentDataSource() {
     const originalQuery = this.dataSource.query.bind(this.dataSource);
 
-    this.dataSource.query = async (query: string, parameters?: any[]) => {
+    this.dataSource.query = (async (...args: [string, any[]?, ...any[]]) => {
+      const [query] = args;
       const queryId = `${Date.now()}-${Math.random()}`;
       const acquireStartUs = this.nowMicros();
 
@@ -42,7 +43,13 @@ export class PoolMetrics implements OnModuleInit {
       try {
         // Measure connection acquisition + query execution combined
         metrics.queryStartUs = this.nowMicros();
-        const result = await originalQuery(query, parameters);
+        // Forward every arg, notably the 3rd (queryRunner) — dropping it here
+        // broke transactions: EntityManager.query() on a transactional manager
+        // passes its bound queryRunner as the 3rd arg so the raw query runs on
+        // the transaction's own connection. Without it, DataSource.query()
+        // opens a brand-new autocommit connection instead, silently running
+        // the "transactional" query outside the transaction entirely.
+        const result = await originalQuery(...args);
         metrics.queryEndUs = this.nowMicros();
 
         // Calculate metrics
@@ -62,7 +69,7 @@ export class PoolMetrics implements OnModuleInit {
       } finally {
         this.queryStack.delete(queryId);
       }
-    };
+    }) as typeof this.dataSource.query;
   }
 
   private nowMicros(): number {
