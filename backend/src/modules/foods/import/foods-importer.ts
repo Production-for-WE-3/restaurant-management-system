@@ -218,28 +218,15 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
       }
 
       // ── Variant ────────────────────────────────────────────────────────────
+      // Unknown names are NOT an error — commitRows auto-creates the Variant
+      // inside the transaction. The id is resolved now if it already exists,
+      // otherwise left null for commit to fill in.
       const variantNameRaw = raw.variant?.trim() || null;
-      let variantId: number | null = null;
-      if (variantNameRaw) {
-        const resolved = variantByName.get(variantNameRaw.toLowerCase());
-        if (resolved === undefined) {
-          errors.push(`Variant "${variantNameRaw}" not found — create it in Variants first`);
-        } else {
-          variantId = resolved;
-        }
-      }
+      const variantId = variantNameRaw ? (variantByName.get(variantNameRaw.toLowerCase()) ?? null) : null;
 
       // ── Sub-variant ────────────────────────────────────────────────────────
       const subVariantNameRaw = raw.subVariant?.trim() || null;
-      let subVariantId: number | null = null;
-      if (subVariantNameRaw) {
-        const resolved = subVariantByName.get(subVariantNameRaw.toLowerCase());
-        if (resolved === undefined) {
-          errors.push(`Sub-variant "${subVariantNameRaw}" not found — create it in Sub-Variants first`);
-        } else {
-          subVariantId = resolved;
-        }
-      }
+      const subVariantId = subVariantNameRaw ? (subVariantByName.get(subVariantNameRaw.toLowerCase()) ?? null) : null;
 
       return {
         rowNumber,
@@ -265,8 +252,56 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
   async commitRows(rows: FoodImportRow[], manager: EntityManager): Promise<ImportCommitResult> {
     const foodRepo = manager.getRepository(Food);
     const foodVariantRepo = manager.getRepository(FoodVariant);
+    const variantRepo = manager.getRepository(Variant);
+    const subVariantRepo = manager.getRepository(SubVariant);
     const failures: ImportCommitResult['failures'] = [];
     const succeeded: ImportCommitResult['succeeded'] = [];
+
+    // Per-batch caches so repeated names in the same chunk (e.g. 10 rows of
+    // "Chicken") only hit the DB once. Keys are lower-cased display names.
+    const variantIdCache = new Map<string, number>();
+    const subVariantIdCache = new Map<string, number>();
+
+    /** Finds the variant by name in this tenant, or creates it. */
+    const resolveVariant = async (name: string): Promise<number> => {
+      const key = name.toLowerCase();
+      const cached = variantIdCache.get(key);
+      if (cached !== undefined) return cached;
+      // Try to find an existing one first (may have been created by a prior chunk).
+      const existing = await variantRepo.findOne({
+        where: scopedWhere(this.tenantContext, { name }),
+        select: { id: true },
+      });
+      if (existing) {
+        variantIdCache.set(key, existing.id);
+        return existing.id;
+      }
+      const created = await variantRepo.save(
+        variantRepo.create({ name, ...tenantFields(this.tenantContext) }),
+      );
+      variantIdCache.set(key, created.id);
+      return created.id;
+    };
+
+    /** Finds the sub-variant by name in this tenant, or creates it. */
+    const resolveSubVariant = async (name: string): Promise<number> => {
+      const key = name.toLowerCase();
+      const cached = subVariantIdCache.get(key);
+      if (cached !== undefined) return cached;
+      const existing = await subVariantRepo.findOne({
+        where: scopedWhere(this.tenantContext, { name }),
+        select: { id: true },
+      });
+      if (existing) {
+        subVariantIdCache.set(key, existing.id);
+        return existing.id;
+      }
+      const created = await subVariantRepo.save(
+        subVariantRepo.create({ name, ...tenantFields(this.tenantContext) }),
+      );
+      subVariantIdCache.set(key, created.id);
+      return created.id;
+    };
 
     for (const row of rows) {
       try {
@@ -293,6 +328,14 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         //    A FoodVariant is the only place price lives — without one the food
         //    appears in the menu but can't be added to an order.
         if (row.basePrice !== null) {
+          // Resolve variant and sub-variant — auto-create if not yet in the DB.
+          const resolvedVariantId = row.variantName
+            ? (row.variantId ?? (await resolveVariant(row.variantName)))
+            : null;
+          const resolvedSubVariantId = row.subVariantName
+            ? (row.subVariantId ?? (await resolveSubVariant(row.subVariantName)))
+            : null;
+
           // Build the display name: "Tea", "Tea – Milk", "Tea – Milk – Full"
           const nameParts = [row.name];
           if (row.variantName) nameParts.push(row.variantName);
@@ -303,8 +346,8 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
             foodVariantRepo.create({
               ...tenantFields(this.tenantContext),
               foodId: saved.id,
-              variantId: row.variantId,
-              subVariantId: row.subVariantId,
+              variantId: resolvedVariantId,
+              subVariantId: resolvedSubVariantId,
               name: fvName,
               price: row.basePrice,
               isDefault: true,

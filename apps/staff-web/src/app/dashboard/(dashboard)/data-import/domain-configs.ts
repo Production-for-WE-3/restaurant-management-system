@@ -12,6 +12,8 @@
 export interface DataImportColumn {
   key: string
   label: string
+  /** Min width applied to both the <th> and the input cell. Defaults to 100px. */
+  minWidth?: number
 }
 
 export interface DataImportDomainConfig {
@@ -25,17 +27,17 @@ export const dataImportDomainConfigs: DataImportDomainConfig[] = [
     domain: "foods",
     label: "Foods",
     columns: [
-      { key: "name", label: "Name" },
-      { key: "slug", label: "Slug" },
-      { key: "skuSegment", label: "SKU" },
-      { key: "foodCategory", label: "Category" },
-      { key: "itemType", label: "Type" },
-      { key: "basePrice", label: "Base Price" },
-      { key: "variant", label: "Variant" },
-      { key: "subVariant", label: "Sub Variant" },
-      { key: "shortDescription", label: "Description" },
-      { key: "imageUrl", label: "Image URL" },
-      { key: "departmentType", label: "Department" },
+      { key: "name",            label: "Name",        minWidth: 140 },
+      { key: "slug",            label: "Slug",        minWidth: 140 },
+      { key: "skuSegment",      label: "SKU",         minWidth: 80  },
+      { key: "foodCategory",    label: "Category",    minWidth: 120 },
+      { key: "itemType",        label: "Type",        minWidth: 90  },
+      { key: "basePrice",       label: "Price",       minWidth: 70  },
+      { key: "variant",         label: "Variant",     minWidth: 100 },
+      { key: "subVariant",      label: "Sub Variant", minWidth: 100 },
+      { key: "departmentType",  label: "Department",  minWidth: 100 },
+      { key: "shortDescription",label: "Description", minWidth: 160 },
+      { key: "imageUrl",        label: "Image URL",   minWidth: 160 },
     ],
   },
 

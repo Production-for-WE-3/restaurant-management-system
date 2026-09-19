@@ -193,7 +193,7 @@ export function ImportWizardDialog({ config }: { config: DataImportDomainConfig 
       }}
     >
       <DialogTrigger render={<Button variant="outline">Import {config.label}</Button>} />
-      <DialogContent className="max-w-[90vw] sm:max-w-[70vw]">
+      <DialogContent className="max-w-[96vw] w-[96vw]">
         <DialogHeader>
           <DialogTitle>Import {config.label.toLowerCase()}</DialogTitle>
         </DialogHeader>
@@ -239,13 +239,13 @@ export function ImportWizardDialog({ config }: { config: DataImportDomainConfig 
                 )}
                 <p className="ml-auto text-xs text-muted-foreground">Edit any cell to fix errors.</p>
               </div>
-              <div className="max-h-96 overflow-y-auto rounded-md border">
-                <Table>
+              <div className="max-h-96 overflow-auto rounded-md border">
+                <Table style={{ minWidth: `${config.columns.reduce((sum, c) => sum + (c.minWidth ?? 100), 80 + 120)}px` }}>
                   <TableHeader>
                     <TableRow>
                       <TableHead className="w-12">Row</TableHead>
                       {config.columns.map((column) => (
-                        <TableHead key={column.key}>{column.label}</TableHead>
+                        <TableHead key={column.key} style={{ minWidth: `${column.minWidth ?? 100}px` }}>{column.label}</TableHead>
                       ))}
                       <TableHead>Issues</TableHead>
                     </TableRow>
@@ -257,11 +257,11 @@ export function ImportWizardDialog({ config }: { config: DataImportDomainConfig 
                         <TableRow key={rowMeta[index]!.clientRowId}>
                           <TableCell className="text-xs text-muted-foreground">{rowMeta[index]!.rowNumber}</TableCell>
                           {config.columns.map((column) => (
-                            <TableCell key={column.key}>
+                            <TableCell key={column.key} style={{ minWidth: `${column.minWidth ?? 100}px` }}>
                               <Input
                                 value={row[column.key] ?? ""}
                                 onChange={(e) => updateRow(index, column.key, e.target.value)}
-                                className="h-7"
+                                className="h-7 w-full"
                                 disabled={isCommitting}
                               />
                             </TableCell>
