@@ -155,10 +155,15 @@ export function useOrder(id: number, initialData?: Order) {
     enabled: id > 0,
     // A caller that already has this exact order from a list response (e.g.
     // the table deep-link resolving its one open order via GET /orders?
-    // tableSessionId=) can pass it here instead of paying for a second GET
-    // /orders/:id for data it's already holding — treated as fresh under the
-    // default 30s staleTime, same as a query that just resolved normally.
+    // tableSessionId=) can pass it here so the screen renders instantly
+    // instead of a blank/loading state. initialDataUpdatedAt=0 marks it as
+    // already stale (rather than "just fetched") so this still kicks off a
+    // real GET /orders/:id in the background on mount — the list response it
+    // came from was fetched separately and can itself be a few seconds old
+    // (e.g. missing an item another device just added), so it must not get
+    // to claim the full 30s staleTime for itself.
     initialData,
+    initialDataUpdatedAt: 0,
     // The KDS realtime push is the primary path for order updates; this poll
     // is only the fallback if the socket connection drops — same gating as
     // useOrderItems, which this was missing (was polling every open order
