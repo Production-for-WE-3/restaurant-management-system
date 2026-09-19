@@ -27,14 +27,18 @@ export const dataImportDomainConfigs: DataImportDomainConfig[] = [
     columns: [
       { key: "name", label: "Name" },
       { key: "slug", label: "Slug" },
-      { key: "sku", label: "SKU" },
+      { key: "skuSegment", label: "SKU" },
       { key: "foodCategory", label: "Category" },
       { key: "itemType", label: "Type" },
+      { key: "basePrice", label: "Base Price" },
+      { key: "variant", label: "Variant" },
+      { key: "subVariant", label: "Sub Variant" },
       { key: "shortDescription", label: "Description" },
       { key: "imageUrl", label: "Image URL" },
       { key: "departmentType", label: "Department" },
     ],
   },
+
   {
     domain: "outlets",
     label: "Outlets",

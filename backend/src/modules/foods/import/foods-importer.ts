@@ -12,6 +12,9 @@ import {
 } from '../../outlet-departments/entities/outlet-department.entity';
 import type { FoodItemType } from '../entities/food.entity';
 import { Food } from '../entities/food.entity';
+import { FoodVariant } from '../../food-variants/entities/food-variant.entity';
+import { Variant } from '../../variants/entities/variant.entity';
+import { SubVariant } from '../../variants/entities/sub-variant.entity';
 import { SkuCompositionService } from '../sku-composition.service';
 
 /**
@@ -22,6 +25,15 @@ import { SkuCompositionService } from '../sku-composition.service';
  * postParent aren't Food fields — they're read only by rowFilter, to drop
  * trashed posts and WooCommerce variation child rows. Unchanged from the
  * pre-migration foods-import.util.ts's HEADER_ALIASES.
+ *
+ * New additions:
+ *   basePrice  → the sell price on the FoodVariant row (required when no
+ *                separate variant column is present — i.e. the food has a
+ *                single sellable item with no variant dimension).
+ *   variant    → name of the global Variant (e.g. "Chicken") — resolved to
+ *                a variantId at validate time. Blank = no variant.
+ *   subVariant → name of the global SubVariant (e.g. "Full") — resolved to
+ *                a subVariantId at validate time. Blank = no sub-variant.
  */
 const HEADER_ALIASES: Record<string, string> = {
   name: 'name',
@@ -44,6 +56,15 @@ const HEADER_ALIASES: Record<string, string> = {
   image: 'imageUrl',
   poststatus: 'postStatus',
   postparent: 'postParent',
+  // Price / variant fields
+  baseprice: 'basePrice',
+  price: 'basePrice',
+  regularprice: 'basePrice',
+  variant: 'variant',
+  variation: 'variant',
+  subvariant: 'subVariant',
+  'sub variant': 'subVariant',
+  subvariation: 'subVariant',
 };
 
 function slugify(name: string): string {
@@ -68,6 +89,14 @@ interface FoodImportRow extends ImportValidatedRow {
   foodCategoryId: number | null;
   itemType: FoodItemType;
   departmentType: OutletDepartmentType | null;
+  /** Parsed sell price for the FoodVariant row. null = no price column present. */
+  basePrice: number | null;
+  /** Raw variant name (e.g. "Chicken") — resolved to variantId. */
+  variantName: string | null;
+  variantId: number | null;
+  /** Raw sub-variant name (e.g. "Full") — resolved to subVariantId. */
+  subVariantName: string | null;
+  subVariantId: number | null;
 }
 
 /**
@@ -79,6 +108,13 @@ interface FoodImportRow extends ImportValidatedRow {
  * Category is resolved by name but, matching prior behavior, an unmatched
  * category is NOT an error — most legacy category names won't exist yet, so
  * the row still imports without one rather than being rejected.
+ *
+ * When basePrice / variant / subVariant columns are present a FoodVariant
+ * row is also created in commitRows so the food is immediately sellable.
+ * Variant and SubVariant are resolved by name (case-insensitive) from the
+ * tenant's global lists. An unrecognised name IS an error — unlike category,
+ * a missing variant would produce a broken FoodVariant with a null FK that
+ * silently falls back to the wrong item at order time.
  */
 @Injectable()
 export class FoodsImporter implements ImportDomainConfig<Record<string, string>, FoodImportRow> {
@@ -102,16 +138,26 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
     private readonly foodsRepository: Repository<Food>,
     @InjectRepository(FoodCategory)
     private readonly foodCategoriesRepository: Repository<FoodCategory>,
+    @InjectRepository(FoodVariant)
+    private readonly foodVariantsRepository: Repository<FoodVariant>,
+    @InjectRepository(Variant)
+    private readonly variantsRepository: Repository<Variant>,
+    @InjectRepository(SubVariant)
+    private readonly subVariantsRepository: Repository<SubVariant>,
     private readonly skuCompositionService: SkuCompositionService,
   ) {}
 
   async validateRows(rows: ImportRawRow<Record<string, string>>[]): Promise<FoodImportRow[]> {
-    const [existingFoods, categories] = await Promise.all([
+    const [existingFoods, categories, variants, subVariants] = await Promise.all([
       this.foodsRepository.find({ select: { slug: true } }),
       this.foodCategoriesRepository.find({ select: { id: true, name: true } }),
+      this.variantsRepository.find({ select: { id: true, name: true } }),
+      this.subVariantsRepository.find({ select: { id: true, name: true } }),
     ]);
     const existingSlugs = new Set(existingFoods.map((f) => f.slug));
     const categoryByName = new Map(categories.map((c) => [c.name.trim().toLowerCase(), c.id]));
+    const variantByName = new Map(variants.map((v) => [v.name.trim().toLowerCase(), v.id]));
+    const subVariantByName = new Map(subVariants.map((sv) => [sv.name.trim().toLowerCase(), sv.id]));
 
     const seenSlugs = new Set<string>();
 
@@ -156,6 +202,42 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         }
       }
 
+      // ── Price ──────────────────────────────────────────────────────────────
+      const basePriceRaw = raw.basePrice?.trim() || null;
+      let basePrice: number | null = null;
+      if (basePriceRaw !== null) {
+        const parsed = parseFloat(basePriceRaw);
+        if (isNaN(parsed) || parsed < 0) {
+          errors.push('Base price must be a non-negative number');
+        } else {
+          basePrice = parsed;
+        }
+      }
+
+      // ── Variant ────────────────────────────────────────────────────────────
+      const variantNameRaw = raw.variant?.trim() || null;
+      let variantId: number | null = null;
+      if (variantNameRaw) {
+        const resolved = variantByName.get(variantNameRaw.toLowerCase());
+        if (resolved === undefined) {
+          errors.push(`Variant "${variantNameRaw}" not found — create it in Variants first`);
+        } else {
+          variantId = resolved;
+        }
+      }
+
+      // ── Sub-variant ────────────────────────────────────────────────────────
+      const subVariantNameRaw = raw.subVariant?.trim() || null;
+      let subVariantId: number | null = null;
+      if (subVariantNameRaw) {
+        const resolved = subVariantByName.get(subVariantNameRaw.toLowerCase());
+        if (resolved === undefined) {
+          errors.push(`Sub-variant "${subVariantNameRaw}" not found — create it in Sub-Variants first`);
+        } else {
+          subVariantId = resolved;
+        }
+      }
+
       return {
         rowNumber,
         name,
@@ -167,20 +249,27 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         foodCategoryId,
         itemType: itemType as FoodItemType,
         departmentType,
+        basePrice,
+        variantName: variantNameRaw,
+        variantId,
+        subVariantName: subVariantNameRaw,
+        subVariantId,
         errors,
       };
     });
   }
 
   async commitRows(rows: FoodImportRow[], manager: EntityManager): Promise<ImportCommitResult> {
-    const repo = manager.getRepository(Food);
+    const foodRepo = manager.getRepository(Food);
+    const foodVariantRepo = manager.getRepository(FoodVariant);
     const failures: ImportCommitResult['failures'] = [];
     const succeeded: ImportCommitResult['succeeded'] = [];
 
     for (const row of rows) {
       try {
-        const saved = await repo.save(
-          repo.create({
+        // 1. Create the Food record.
+        const saved = await foodRepo.save(
+          foodRepo.create({
             foodCategoryId: row.foodCategoryId,
             name: row.name,
             slug: row.slug,
@@ -189,12 +278,39 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
             imageUrl: row.imageUrl,
             itemType: row.itemType,
             departmentType: row.departmentType,
+            hasVariants: row.basePrice !== null,
           }),
         );
-        // Every food needs a composed SKU even with no segment configured —
-        // same transaction as the insert, via the same manager, matching
-        // FoodsService.create()'s save+recompose-together guarantee.
+
+        // 2. Compose the Food's own SKU (segment only, no variant yet).
         await this.skuCompositionService.recomposeFoodTree(saved.id, manager);
+
+        // 3. If a price was provided, create the FoodVariant (sellable item).
+        //    A FoodVariant is the only place price lives — without one the food
+        //    appears in the menu but can't be added to an order.
+        if (row.basePrice !== null) {
+          // Build the display name: "Tea", "Tea – Milk", "Tea – Milk – Full"
+          const nameParts = [row.name];
+          if (row.variantName) nameParts.push(row.variantName);
+          if (row.subVariantName) nameParts.push(row.subVariantName);
+          const fvName = nameParts.join(' – ');
+
+          await foodVariantRepo.save(
+            foodVariantRepo.create({
+              foodId: saved.id,
+              variantId: row.variantId,
+              subVariantId: row.subVariantId,
+              name: fvName,
+              price: row.basePrice,
+              isDefault: true,
+              sortOrder: 0,
+            }),
+          );
+
+          // Recompose so the FoodVariant gets its composed SKU too.
+          await this.skuCompositionService.recomposeFoodTree(saved.id, manager);
+        }
+
         succeeded.push({ rowNumber: row.rowNumber, entityId: saved.id });
       } catch (error) {
         failures.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : 'Failed to create food' });
@@ -207,28 +323,42 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
   async buildTemplate(): Promise<Buffer> {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Foods');
-    sheet.addRow(['name', 'slug', 'skuSegment', 'category', 'itemType']);
-    sheet.addRow(['Margherita Pizza', 'margherita-pizza', 'PIZZA', 'Pizza', 'ready_made']);
+    sheet.addRow(['name', 'slug', 'sku', 'category', 'item type', 'basePrice', 'variant', 'sub variant']);
+    sheet.addRow(['Tea', 'black-tea', 'IK01', 'hot beverage', 'kitchen', 25, 'Black', '']);
+    sheet.addRow(['Tea', 'special-tea', 'IK02', 'hot beverage', 'kitchen', 60, 'Special', '']);
+    sheet.addRow(['Margherita Pizza', 'margherita-pizza', 'PIZZA', 'Pizza', 'kitchen', 450, '', '']);
     return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
   }
 
   async buildExport(): Promise<Buffer> {
-    const [foods, categories] = await Promise.all([
+    const [foods, categories, foodVariants, variants, subVariants] = await Promise.all([
       this.foodsRepository.find({ order: { id: 'ASC' } }),
       this.foodCategoriesRepository.find({ select: { id: true, name: true } }),
+      this.foodVariantsRepository.find({ where: { isDefault: true }, order: { foodId: 'ASC' } }),
+      this.variantsRepository.find({ select: { id: true, name: true } }),
+      this.subVariantsRepository.find({ select: { id: true, name: true } }),
     ]);
+
     const categoryById = new Map(categories.map((c) => [c.id, c.name]));
+    const variantById = new Map(variants.map((v) => [v.id, v.name]));
+    const subVariantById = new Map(subVariants.map((sv) => [sv.id, sv.name]));
+    // Default FoodVariant per food (first one found since we ordered by foodId).
+    const fvByFoodId = new Map(foodVariants.map((fv) => [fv.foodId, fv]));
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Foods');
-    sheet.addRow(['name', 'slug', 'skuSegment', 'category', 'itemType']);
+    sheet.addRow(['name', 'slug', 'sku', 'category', 'item type', 'basePrice', 'variant', 'sub variant']);
     for (const food of foods) {
+      const fv = fvByFoodId.get(food.id);
       sheet.addRow([
         food.name,
         food.slug,
         food.skuSegment ?? '',
         food.foodCategoryId ? (categoryById.get(food.foodCategoryId) ?? '') : '',
         food.itemType,
+        fv?.price ?? '',
+        fv?.variantId ? (variantById.get(fv.variantId) ?? '') : '',
+        fv?.subVariantId ? (subVariantById.get(fv.subVariantId) ?? '') : '',
       ]);
     }
     return (await workbook.xlsx.writeBuffer()) as unknown as Buffer;
