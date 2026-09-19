@@ -232,6 +232,28 @@ export class ReservationsService {
     return this.reservationTablesRepository.find({ where: { reservationId } });
   }
 
+  /**
+   * Batched form of listTables() — the floor board's "arriving soon" badge
+   * used to fire one GET /reservations/:id/tables per reservation in the
+   * arrival window; this resolves all of them in a single query instead.
+   * Scoped to outletId (not just the given reservationIds) so a caller can't
+   * probe another outlet's reservations by id.
+   */
+  async listTablesForReservations(
+    outletId: number,
+    reservationIds: number[],
+  ): Promise<ReservationTable[]> {
+    if (reservationIds.length === 0) return [];
+    return this.reservationTablesRepository
+      .createQueryBuilder('reservationTable')
+      .innerJoin('reservationTable.reservation', 'reservation')
+      .where('reservation.outlet_id = :outletId', { outletId })
+      .andWhere('reservationTable.reservation_id IN (:...reservationIds)', {
+        reservationIds,
+      })
+      .getMany();
+  }
+
   async assignTable(
     reservationId: number,
     dto: AssignReservationTableDto,

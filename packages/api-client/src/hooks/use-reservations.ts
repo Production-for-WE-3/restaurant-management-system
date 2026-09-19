@@ -101,6 +101,23 @@ export function useReservationTables(reservationId: number) {
   })
 }
 
+/**
+ * Batched form of useReservationTables — every assigned table across several
+ * reservations in one request, instead of a useQueries fan-out of one GET
+ * per reservation (what the floor board's "arriving soon" badges used to
+ * do for every reservation in the arrival window).
+ */
+export function useReservationTablesBatch(outletId: number | null, reservationIds: number[]) {
+  return useQuery({
+    queryKey: queryKeys.reservations.tablesBatch(outletId ?? 0, reservationIds),
+    queryFn: () =>
+      apiClient<ReservationTableAssignment[]>(
+        `/reservations/tables${toQueryString({ outletId, reservationIds: reservationIds.join(",") })}`,
+      ),
+    enabled: !!outletId && reservationIds.length > 0,
+  })
+}
+
 export function useAssignReservationTable(reservationId: number) {
   const queryClient = useQueryClient()
   return useMutation({

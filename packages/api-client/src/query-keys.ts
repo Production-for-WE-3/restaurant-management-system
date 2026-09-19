@@ -36,6 +36,8 @@ export const queryKeys = {
     list: (params?: unknown) => [...queryKeys.reservations.lists(), params] as const,
     detail: (id: number) => [...queryKeys.reservations.all, "detail", id] as const,
     tables: (id: number) => [...queryKeys.reservations.all, "tables", id] as const,
+    tablesBatch: (outletId: number, reservationIds: number[]) =>
+      [...queryKeys.reservations.all, "tables-batch", outletId, reservationIds] as const,
   },
   outlets: {
     all: ["outlets"] as const,

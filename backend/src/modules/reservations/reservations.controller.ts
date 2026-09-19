@@ -18,6 +18,7 @@ import { OutletAccessService } from '../auth/outlet-access.service';
 import { User } from '../users/entities/user.entity';
 import { AssignReservationTableDto } from './dto/assign-reservation-table.dto';
 import { CreateReservationDto } from './dto/create-reservation.dto';
+import { ListReservationTablesBatchQueryDto } from './dto/list-reservation-tables-batch-query.dto';
 import { ListReservationsQueryDto } from './dto/list-reservations-query.dto';
 import { UpdateReservationStatusDto } from './dto/update-reservation-status.dto';
 import { UpdateReservationDto } from './dto/update-reservation.dto';
@@ -54,6 +55,23 @@ export class ReservationsController {
       await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.reservationsService.findAll(query, accessible);
+  }
+
+  @Get('tables')
+  @RequirePermissions('reservations.view')
+  @ApiOperation({
+    summary:
+      "Batched form of GET /reservations/:id/tables — every assigned table across several reservations in one call (e.g. the floor board's arriving-soon badges)",
+  })
+  async listTablesBatch(
+    @Query() query: ListReservationTablesBatchQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.outletAccess.assertOutletAccess(user.id, query.outletId);
+    return this.reservationsService.listTablesForReservations(
+      query.outletId,
+      query.reservationIds,
+    );
   }
 
   @Get(':id')

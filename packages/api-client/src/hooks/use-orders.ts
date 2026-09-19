@@ -143,6 +143,8 @@ export function useOrderStatusHistory(orderId: number) {
 }
 
 export function useOrder(id: number, initialData?: Order) {
+  const realtimeConnected = useKdsSocketConnected()
+
   return useQuery({
     queryKey: queryKeys.orders.detail(id),
     queryFn: () => apiClient<Order>(`/orders/${id}`),
@@ -153,8 +155,11 @@ export function useOrder(id: number, initialData?: Order) {
     // /orders/:id for data it's already holding — treated as fresh under the
     // default 30s staleTime, same as a query that just resolved normally.
     initialData,
-    // Fallback in case a websocket event is missed — mirrors useKdsBootstrap.
-    refetchInterval: 30_000,
+    // The KDS realtime push is the primary path for order updates; this poll
+    // is only the fallback if the socket connection drops — same gating as
+    // useOrderItems, which this was missing (was polling every open order
+    // screen every 30s even with a live socket).
+    refetchInterval: realtimeConnected ? false : 30_000,
   })
 }
 

@@ -1,16 +1,13 @@
 "use client"
 
-import { useState } from "react"
-import { useQueries } from "@tanstack/react-query"
+import { useMemo, useState } from "react"
 import { LayoutGridIcon } from "lucide-react"
 
 import { Skeleton } from "@rms/ui/skeleton"
 import { useDelayedLoading } from "@rms/ui/use-delayed-loading"
-import { apiClient } from "@rms/api-client/client"
-import { queryKeys } from "@rms/api-client/query-keys"
 import { useDiningAreas } from "@rms/api-client/hooks/use-dining-areas"
 import { useDiningTables } from "@rms/api-client/hooks/use-dining-tables"
-import { useReservations, type ReservationTableAssignment } from "@rms/api-client/hooks/use-reservations"
+import { useReservations, useReservationTablesBatch } from "@rms/api-client/hooks/use-reservations"
 import { TableCard } from "./table-card"
 import type { DiningTable } from "@rms/api-client/hooks/use-dining-tables"
 
@@ -32,33 +29,54 @@ function useArrivingSoonByTable(outletId: number): Map<number, string> {
   const { data: pending } = useReservations({ outletId, status: "pending", limit: 100 })
   const { data: confirmed } = useReservations({ outletId, status: "confirmed", limit: 100 })
 
-  const arrivingSoon = [...(pending?.data ?? []), ...(confirmed?.data ?? [])].filter((reservation) =>
-    isArrivingSoon(reservation.reservedAt),
+  // Memoized so a parent re-render (polling, websocket pushes — this board
+  // stays open all shift) doesn't rebuild these on every render, only when
+  // the underlying reservation lists actually change.
+  const arrivingSoon = useMemo(
+    () =>
+      [...(pending?.data ?? []), ...(confirmed?.data ?? [])].filter((reservation) =>
+        isArrivingSoon(reservation.reservedAt),
+      ),
+    [pending, confirmed],
   )
+  const reservationIds = useMemo(() => arrivingSoon.map((r) => r.id), [arrivingSoon])
 
-  const tableAssignments = useQueries({
-    queries: arrivingSoon.map((reservation) => ({
-      queryKey: queryKeys.reservations.tables(reservation.id),
-      queryFn: () => apiClient<ReservationTableAssignment[]>(`/reservations/${reservation.id}/tables`),
-    })),
-  })
+  // One batched request for every arriving reservation's table assignments,
+  // instead of a useQueries fan-out of one GET per reservation.
+  const { data: assignments } = useReservationTablesBatch(outletId, reservationIds)
 
-  const byTable = new Map<number, string>()
-  arrivingSoon.forEach((reservation, index) => {
-    for (const assignment of tableAssignments[index]?.data ?? []) {
+  return useMemo(() => {
+    const reservedAtById = new Map(arrivingSoon.map((r) => [r.id, r.reservedAt]))
+    const byTable = new Map<number, string>()
+    for (const assignment of assignments ?? []) {
+      const reservedAt = reservedAtById.get(assignment.reservationId)
+      if (!reservedAt) continue
       const soonest = byTable.get(assignment.diningTableId)
-      if (!soonest || reservation.reservedAt < soonest) {
-        byTable.set(assignment.diningTableId, reservation.reservedAt)
+      if (!soonest || reservedAt < soonest) {
+        byTable.set(assignment.diningTableId, reservedAt)
       }
     }
-  })
-  return byTable
+    return byTable
+  }, [arrivingSoon, assignments])
 }
 
 export function FloorBoard({ outletId, basePath }: { outletId: number; basePath?: string }) {
   const { data: areas, isLoading } = useDiningAreas({ outletId, limit: 100 })
   const showSkeleton = useDelayedLoading(isLoading)
   const arrivingSoonByTable = useArrivingSoonByTable(outletId)
+  // One outlet-wide fetch instead of each AreaSection fetching its own
+  // diningAreaId-filtered page — an outlet with several areas used to fire
+  // one GET /dining-tables per area on every floor-board load.
+  const { data: allTables } = useDiningTables({ outletId, limit: 500 })
+  const tablesByArea = useMemo(() => {
+    const map = new Map<number, DiningTable[]>()
+    for (const table of allTables?.data ?? []) {
+      const group = map.get(table.diningAreaId)
+      if (group) group.push(table)
+      else map.set(table.diningAreaId, [table])
+    }
+    return map
+  }, [allTables])
 
   return (
     <div className="space-y-4">
@@ -86,9 +104,8 @@ export function FloorBoard({ outletId, basePath }: { outletId: number; basePath?
       {areas?.data.map((area) => (
         <AreaSection
           key={area.id}
-          outletId={outletId}
-          areaId={area.id}
           areaName={area.name}
+          tables={tablesByArea.get(area.id) ?? []}
           arrivingSoonByTable={arrivingSoonByTable}
           basePath={basePath}
         />
@@ -98,38 +115,34 @@ export function FloorBoard({ outletId, basePath }: { outletId: number; basePath?
 }
 
 function AreaSection({
-  outletId,
-  areaId,
   areaName,
+  tables,
   arrivingSoonByTable,
   basePath,
 }: {
-  outletId: number
-  areaId: number
   areaName: string
+  tables: DiningTable[]
   arrivingSoonByTable: Map<number, string>
   basePath?: string
 }) {
-  const { data: tables } = useDiningTables({ outletId, diningAreaId: areaId, limit: 100 })
-
   return (
     <section className="space-y-2">
       <div className="flex items-center justify-between">
         <h2 className="text-sm font-semibold">{areaName}</h2>
-        <span className="text-xs text-muted-foreground">{tables?.data.length ?? 0} tables</span>
+        <span className="text-xs text-muted-foreground">{tables.length} tables</span>
       </div>
       <div className="grid grid-cols-2 gap-3 sm:hidden">
-        {(tables?.data ?? []).map((table) => (
+        {tables.map((table) => (
           <TableCard key={table.id} table={table} arrivingAt={arrivingSoonByTable.get(table.id)} basePath={basePath} />
         ))}
-        {(tables?.data.length ?? 0) === 0 && <p className="col-span-2 py-8 text-center text-sm text-muted-foreground">No tables in this area yet.</p>}
+        {tables.length === 0 && <p className="col-span-2 py-8 text-center text-sm text-muted-foreground">No tables in this area yet.</p>}
       </div>
       <div className="relative hidden h-[340px] overflow-hidden rounded-xl border bg-muted/20 [background-image:linear-gradient(to_right,hsl(var(--border)/.35)_1px,transparent_1px),linear-gradient(to_bottom,hsl(var(--border)/.35)_1px,transparent_1px)] [background-size:32px_32px] sm:block">
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-primary/[0.04] via-transparent to-amber-500/[0.04]" />
-        {(tables?.data ?? []).map((table, index) => (
+        {tables.map((table, index) => (
           <MapTable key={table.id} table={table} index={index} arrivingAt={arrivingSoonByTable.get(table.id)} basePath={basePath} />
         ))}
-        {(tables?.data.length ?? 0) === 0 && <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">No tables in this area yet.</p>}
+        {tables.length === 0 && <p className="absolute inset-0 flex items-center justify-center text-sm text-muted-foreground">No tables in this area yet.</p>}
       </div>
     </section>
   )

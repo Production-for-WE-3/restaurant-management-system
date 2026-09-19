@@ -16,7 +16,6 @@ import { StatusBadge } from "@rms/ui/status-badge"
 import { TableSkeleton } from "@rms/ui/skeletons"
 import { useDelayedLoading } from "@rms/ui/use-delayed-loading"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@rms/ui/table"
-import { useCustomers } from "@rms/api-client/hooks/use-customers"
 import { tableSessionName, useTableSessions, type TableSession } from "@rms/api-client/hooks/use-table-sessions"
 import { useOrders, type Order } from "@rms/api-client/hooks/use-orders"
 import { useActiveOutlet } from "@rms/api-client/outlet/active-outlet-context"
@@ -50,25 +49,24 @@ export default function OrdersPage() {
   // volume is small enough this is cheap.
   const { data: orders, isLoading } = useOrders({ outletId: outletId ?? undefined, limit: 200 })
   const { data: sessions } = useTableSessions({ outletId: outletId ?? undefined, limit: 200 })
-  const { data: customers } = useCustomers({ limit: 200 })
   const showSkeleton = useDelayedLoading(isLoading)
 
   const rows = useMemo<OrderRow[]>(() => {
     const sessionById = new Map<number, TableSession>((sessions?.data ?? []).map((s) => [s.id, s]))
-    const customerNameById = new Map<number, string>((customers?.data ?? []).map((c) => [c.id, c.name]))
 
     return (orders?.data ?? [])
       .filter((order) => isToday(order.createdAt))
       .map((order) => {
         const session = order.tableSessionId ? sessionById.get(order.tableSessionId) : undefined
         const tableName = order.tableName ?? order.orderType.replace(/_/g, " ")
-        const customerName = order.customerId
-          ? (customerNameById.get(order.customerId) ?? "Loading…")
-          : (session?.customer?.name ?? "Walk-in")
+        // The list endpoint already resolves this server-side (same as
+        // tableName above) — no need to fetch and index the whole customer
+        // table client-side just to look up a name.
+        const customerName = order.customerName ?? session?.customer?.name ?? "Walk-in"
         const sessionLabel = session ? tableSessionName(session) : "—"
         return { order, tableName, customerName, sessionLabel }
       })
-  }, [orders, sessions, customers])
+  }, [orders, sessions])
 
   const columns = useMemo<ColumnDef<OrderRow>[]>(
     () => [

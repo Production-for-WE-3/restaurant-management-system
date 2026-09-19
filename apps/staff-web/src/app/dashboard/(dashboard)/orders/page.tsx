@@ -16,7 +16,6 @@ import { useDelayedLoading } from "@/components/ui/use-delayed-loading"
 import { DataTablePagination } from "@/components/data-table-pagination"
 import { useActiveOutlet } from "@/lib/outlet/active-outlet-context"
 import { useOrders, type Order } from "@/hooks/use-orders"
-import { useCustomers } from "@/hooks/use-customers"
 import { useTableSessions } from "@/hooks/use-table-sessions"
 import { ORDER_STATUSES } from "@/lib/validators/orders"
 import { usePageTitle } from "@rms/ui/use-page-title"
@@ -52,17 +51,17 @@ export default function OrdersTrackingPage() {
   const [page, setPage] = useState(1)
   const [range, setRange] = useState<DateRange>(defaultRange)
   const { outletId } = useActiveOutlet()
-  const { data: customers } = useCustomers({ limit: 500 })
   const { data: tableSessions } = useTableSessions({ outletId: outletId ?? undefined, limit: 500 })
   const customerNameFor = useMemo(() => {
-    const customerById = new Map((customers?.data ?? []).map((customer) => [customer.id, customer.name]))
     const sessionById = new Map((tableSessions?.data ?? []).map((session) => [session.id, session]))
     return (order: Order) => {
       const session = order.tableSessionId ? sessionById.get(order.tableSessionId) : undefined
       const names = session?.customers?.map((customer) => customer.name).filter(Boolean) ?? []
-      return names.length > 0 ? names.join(", ") : (order.customerId ? customerById.get(order.customerId) : undefined) ?? "Walk-in customer"
+      // order.customerName is already resolved server-side — no need to fetch
+      // and index the whole customer table client-side just for this.
+      return names.length > 0 ? names.join(", ") : (order.customerName ?? "Walk-in customer")
     }
-  }, [customers?.data, tableSessions?.data])
+  }, [tableSessions?.data])
   const columns = useMemo(() => createColumns(customerNameFor), [customerNameFor])
   const { data, isLoading, isPlaceholderData } = useOrders({
     page,
