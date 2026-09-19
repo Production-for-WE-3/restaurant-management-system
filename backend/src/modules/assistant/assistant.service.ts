@@ -142,8 +142,15 @@ export class AssistantService {
         }),
       },
     );
-    if (!response.ok)
-      throw new Error(`LLM request failed (${response.status})`);
+    if (!response.ok) {
+      // Groq's error body (e.g. "model_decommissioned", "invalid_api_key")
+      // is what actually explains a 4xx/5xx here — the status code alone
+      // sent us on a manual-reproduction goose chase last time this fired.
+      const body = await response.text().catch(() => '');
+      throw new Error(
+        `LLM request failed (${response.status}): ${body.slice(0, 500)}`,
+      );
+    }
     const answer = (
       (await response.json()) as { choices: [{ message: { content: string } }] }
     ).choices[0].message.content;
