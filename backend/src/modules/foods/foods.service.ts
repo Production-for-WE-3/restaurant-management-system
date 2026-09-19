@@ -310,10 +310,7 @@ export class FoodsService {
 
   /** Soft-deletes every requested id that actually belongs to the current tenant, silently ignoring the rest. */
   async removeMany(ids: number[]): Promise<{ deleted: number }> {
-    const foods = await this.foodsRepository.find({
-      where: scopedWhere(this.tenantContext, { id: In(ids) }),
-      select: { id: true },
-    });
+    const foods = await this.foodsRepository.find({ where: scopedWhere(this.tenantContext, { id: In(ids) }), select: { id: true } });
     if (foods.length === 0) return { deleted: 0 };
     await this.foodsRepository.softDelete(foods.map((food) => food.id));
     return { deleted: foods.length };

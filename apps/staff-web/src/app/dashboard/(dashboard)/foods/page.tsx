@@ -85,6 +85,7 @@ export default function FoodsPage() {
 export function FoodsList({ readOnly }: { readOnly: boolean }) {
   const [categoryFilter, setCategoryFilter] = useState<string>("all")
   const [availabilityFilter, setAvailabilityFilter] = useState<string>("all")
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const { data: categories } = useFoodCategories({ limit: 100 })
   const { data, isLoading } = useFoods({
     limit: 100,
@@ -100,6 +101,8 @@ export function FoodsList({ readOnly }: { readOnly: boolean }) {
     }).filter((food) => availabilityFilter === "all" || (availabilityFilter === "available" ? food.isActive : !food.isActive))
   }, [categories, data, performance, availabilityFilter])
   const showSkeleton = useDelayedLoading(isLoading || performanceLoading)
+  const columns = useMemo(() => buildColumns(!readOnly), [readOnly])
+  const bulkDeleteFoods = useBulkDeleteFoods()
 
   function handleExport() {
     const header = ["Name", "Category", "SKU", "Sold", "Revenue", "Availability"]
@@ -117,7 +120,22 @@ export function FoodsList({ readOnly }: { readOnly: boolean }) {
     data: rows,
     columns,
     getCoreRowModel: getCoreRowModel(),
+    getRowId: (row) => String(row.id),
+    onRowSelectionChange: setRowSelection,
+    state: { rowSelection },
   })
+
+  const selectedIds = Object.keys(rowSelection).map(Number)
+
+  async function handleBulkDelete() {
+    try {
+      const result = await bulkDeleteFoods.mutateAsync(selectedIds)
+      toast.success(`${result.deleted} food${result.deleted === 1 ? "" : "s"} deleted`)
+      setRowSelection({})
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete foods")
+    }
+  }
 
   usePageTitle("Foods")
 
@@ -130,6 +148,23 @@ export function FoodsList({ readOnly }: { readOnly: boolean }) {
           <Select value={categoryFilter} onValueChange={(value) => setCategoryFilter(value ?? "all")}><SelectTrigger className="h-9 w-40 rounded-xl text-xs"><SelectValue placeholder="All categories" /></SelectTrigger><SelectContent><SelectItem value="all">All categories</SelectItem>{categories?.data.map((category) => <SelectItem key={category.id} value={String(category.id)}>{category.name}</SelectItem>)}</SelectContent></Select>
           <Select value={availabilityFilter} onValueChange={(value) => setAvailabilityFilter(value ?? "all")}><SelectTrigger className="h-9 w-32 rounded-xl text-xs"><SelectValue placeholder="Availability" /></SelectTrigger><SelectContent><SelectItem value="all">Availability</SelectItem><SelectItem value="available">Available</SelectItem><SelectItem value="unavailable">Unavailable</SelectItem></SelectContent></Select>
           <Button variant="outline" size="sm" disabled={isLoading || rows.length === 0} onClick={handleExport}><DownloadIcon /> Export CSV</Button>
+          {!readOnly && selectedIds.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger render={<Button variant="destructive" size="sm"><Trash2Icon /> Delete selected ({selectedIds.length})</Button>} />
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete {selectedIds.length} food{selectedIds.length === 1 ? "" : "s"}?</AlertDialogTitle>
+                  <AlertDialogDescription>This soft-deletes the selected foods. This cannot be undone from the UI.</AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction variant="destructive" onClick={handleBulkDelete}>
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
           {readOnly ? <Button variant="outline" size="sm" render={<Link href="/dashboard/foods" />}>Manage Foods</Button> : <CreateFoodDialog />}
         </div>
       </div>
@@ -151,11 +186,17 @@ export function FoodsList({ readOnly }: { readOnly: boolean }) {
           <TableBody>
             {table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>
-                {row.getVisibleCells().map((cell) => (
-                  <TableCell key={cell.id}>
-                    <Link href={`/dashboard/foods/${row.original.id}`} className="block">{flexRender(cell.column.columnDef.cell, cell.getContext())}</Link>
-                  </TableCell>
-                ))}
+                {row.getVisibleCells().map((cell) =>
+                  cell.column.id === SELECT_COLUMN_ID ? (
+                    <TableCell key={cell.id} onClick={(event) => event.stopPropagation()}>
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  ) : (
+                    <TableCell key={cell.id}>
+                      <Link href={`/dashboard/foods/${row.original.id}`} className="block">{flexRender(cell.column.columnDef.cell, cell.getContext())}</Link>
+                    </TableCell>
+                  )
+                )}
               </TableRow>
             ))}
           </TableBody>
