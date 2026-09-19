@@ -20,6 +20,21 @@ export const ASSISTANT_DATA_PERMISSIONS = {
   overview: [['dashboard.view'], ['reports.view']],
 } as const;
 
+export const ASSISTANT_ALLOWED_TABLES: Record<string, ReadonlySet<string>> = {
+  occupancy: new Set(['dining_tables', 'outlets']),
+  inventory: new Set(['warehouse_ingredient_stocks', 'ingredients', 'warehouses']),
+  menu: new Set(['foods']),
+  staffSummary: new Set(['employees', 'employee_outlet_assignments']),
+  payments: new Set(['order_payments']),
+  serviceIssues: new Set(['service_requests']),
+  cancellations: new Set(['reservations']),
+  bookings: new Set(['reservations']),
+  customers: new Set(['orders']),
+  revenue: new Set(['orders']),
+  orderDetails: new Set(['orders', 'order_items', 'foods']),
+  overview: new Set(['orders']),
+};
+
 /**
  * Existing read permissions that may be added as assistant datasets. Keeping
  * this list here makes the security review explicit: a new assistant dataset
@@ -45,3 +60,32 @@ export const ASSISTANT_BLOCKED_TABLES = new Set([
   'users', 'roles', 'permissions', 'role_permissions', 'user_role_assignments',
   'refresh_tokens', 'customer_refresh_tokens', 'typeorm_migrations',
 ]);
+
+export function assertAssistantDataAccess(
+  intent: keyof typeof ASSISTANT_DATA_PERMISSIONS,
+  tables: Iterable<string>,
+): void {
+  const normalized = [...new Set(Array.from(tables).map((table) => table.trim()))]
+    .filter(Boolean)
+    .map((table) => table.toLowerCase());
+
+  const blocked = normalized.filter((table) =>
+    ASSISTANT_BLOCKED_TABLES.has(table),
+  );
+  if (blocked.length > 0) {
+    throw new Error(
+      `Blocked table access for assistant intent "${intent}": ${blocked.join(', ')}`,
+    );
+  }
+
+  const allowed = ASSISTANT_ALLOWED_TABLES[intent] ?? new Set<string>();
+  const notAllowed = normalized.filter(
+    (table) => !allowed.has(table) && !allowed.has(table.replace(/\./g, '_')),
+  );
+
+  if (notAllowed.length > 0) {
+    throw new Error(
+      `Assistant intent "${intent}" is not allowed to access table(s): ${notAllowed.join(', ')}`,
+    );
+  }
+}

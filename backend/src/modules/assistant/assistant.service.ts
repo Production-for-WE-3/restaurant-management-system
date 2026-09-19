@@ -17,7 +17,10 @@ import {
   ASSISTANT_SYSTEM_PROMPT,
   ASSISTANT_PERMISSION,
 } from './assistant.constants';
-import { ASSISTANT_DATA_PERMISSIONS } from './assistant-data.registry';
+import {
+  ASSISTANT_DATA_PERMISSIONS,
+  assertAssistantDataAccess,
+} from './assistant-data.registry';
 
 type Route = 'DATA' | 'INSIGHT' | 'CHAT';
 type DataIntent =
@@ -342,6 +345,7 @@ export class AssistantService {
     const outletFilter = ids ? ' AND outlet_id = ANY($1::bigint[])' : '';
     const params = ids ? [ids] : [];
     if (intent === 'occupancy') {
+      assertAssistantDataAccess(intent, ['dining_tables', 'outlets']);
       const metrics = await this.db.query(
         `SELECT dt.name, dt.code, dt.status, dt.capacity, o.name AS "outletName" FROM dining_tables dt JOIN outlets o ON o.id = dt.outlet_id WHERE dt.outlet_id = ANY($1::bigint[]) AND dt.is_active = true ORDER BY o.name, dt.sort_order, dt.name`,
         params,
@@ -354,35 +358,46 @@ export class AssistantService {
     const groupBy = selected.groupBy;
     let metrics: unknown;
     if (intent === 'inventory') {
+      assertAssistantDataAccess(intent, [
+        'warehouse_ingredient_stocks',
+        'ingredients',
+        'warehouses',
+      ]);
       metrics = await this.db.query(
         `SELECT i.name, i.code, SUM(s.quantity)::numeric AS quantity, SUM(s.reserved_quantity)::numeric AS "reservedQuantity", GREATEST(SUM(s.quantity) - SUM(s.reserved_quantity), 0)::numeric AS "availableQuantity", MAX(i.reorder_level)::numeric AS "reorderLevel", MAX(i.minimum_stock)::numeric AS "minimumStock", CASE WHEN SUM(s.quantity) <= 0 THEN 'out_of_stock' WHEN SUM(s.quantity) - SUM(s.reserved_quantity) <= GREATEST(MAX(i.reorder_level), MAX(i.minimum_stock)) THEN 'low_stock' ELSE 'in_stock' END AS status FROM warehouse_ingredient_stocks s JOIN ingredients i ON i.id = s.ingredient_id JOIN warehouses w ON w.id = s.warehouse_id WHERE i.is_active = true${ids ? ' AND w.outlet_id = ANY($1::bigint[])' : ''} GROUP BY i.id, i.name, i.code ORDER BY "availableQuantity" ASC LIMIT 100`,
         params,
       );
     } else if (intent === 'menu') {
+      assertAssistantDataAccess(intent, ['foods']);
       metrics = await this.db.query(
         `SELECT name, item_type AS type, is_active AS "isActive" FROM foods WHERE is_active = true ORDER BY name LIMIT 200`,
       );
     } else if (intent === 'staffSummary') {
+      assertAssistantDataAccess(intent, ['employees', 'employee_outlet_assignments']);
       metrics = await this.db.query(
         `SELECT employment_status AS status, COUNT(*)::int AS count FROM employees WHERE is_active = true${ids ? ' AND EXISTS (SELECT 1 FROM employee_outlet_assignments eoa WHERE eoa.employee_id = employees.id AND eoa.is_active = true AND eoa.outlet_id = ANY($1::bigint[]))' : ''} GROUP BY employment_status ORDER BY employment_status`,
         params,
       );
     } else if (intent === 'payments') {
+      assertAssistantDataAccess(intent, ['order_payments']);
       metrics = await this.db.query(
         `SELECT method, type, COUNT(*)::int AS count, COALESCE(SUM(amount),0)::numeric AS amount FROM order_payments WHERE status = 'completed'${dateFilter('created_at')}${outletFilter} GROUP BY method, type ORDER BY amount DESC`,
         params,
       );
     } else if (intent === 'orderDetails') {
+      assertAssistantDataAccess(intent, ['orders', 'order_items', 'foods']);
       metrics = await this.db.query(
         `SELECT o.order_number AS "orderNumber", o.bill_number AS "billNumber", o.order_type AS "orderType", o.order_source AS "orderSource", o.status, o.payment_status AS "paymentStatus", o.grand_total AS "grandTotal", o.created_at AS "createdAt", COALESCE(items.items, '[]'::json) AS items FROM orders o LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', f.name, 'quantity', oi.quantity) ORDER BY f.name) AS items FROM order_items oi JOIN foods f ON f.id = oi.food_id WHERE oi.order_id = o.id) items ON true WHERE 1=1${dateFilter('o.created_at')}${ids ? ' AND o.outlet_id = ANY($1::bigint[])' : ''} ORDER BY o.created_at LIMIT 100`,
         params,
       );
     } else if (intent === 'serviceIssues') {
+      assertAssistantDataAccess(intent, ['service_requests']);
       metrics = await this.db.query(
         `SELECT ${groupBy === 'day' ? "DATE_TRUNC('day', created_at)::date" : 'type AS category'}, COUNT(*)::int AS count FROM service_requests WHERE 1=1${dateFilter('created_at')}${outletFilter} GROUP BY ${groupBy === 'day' ? "DATE_TRUNC('day', created_at)" : 'type'} ORDER BY count DESC LIMIT 100`,
         params,
       );
     } else if (intent === 'cancellations') {
+      assertAssistantDataAccess(intent, ['reservations']);
       metrics =
         groupBy === 'day'
           ? await this.db.query(
@@ -396,6 +411,7 @@ export class AssistantService {
               )
             )[0];
     } else if (intent === 'bookings') {
+      assertAssistantDataAccess(intent, ['reservations']);
       metrics =
         groupBy === 'day'
           ? await this.db.query(
@@ -409,6 +425,7 @@ export class AssistantService {
               )
             )[0];
     } else if (intent === 'customers') {
+      assertAssistantDataAccess(intent, ['orders']);
       metrics = (
         await this.db.query(
           `SELECT COUNT(DISTINCT customer_id)::int AS customers FROM orders WHERE status <> 'cancelled' AND customer_id IS NOT NULL${dateFilter('created_at')}${outletFilter}`,
@@ -416,6 +433,7 @@ export class AssistantService {
         )
       )[0];
     } else if (intent === 'revenue') {
+      assertAssistantDataAccess(intent, ['orders']);
       metrics =
         groupBy === 'day'
           ? await this.db.query(
@@ -429,6 +447,7 @@ export class AssistantService {
               )
             )[0];
     } else {
+      assertAssistantDataAccess(intent, ['orders']);
       metrics = (
         await this.db.query(
           `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
