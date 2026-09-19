@@ -64,6 +64,10 @@ export class ImportJob {
   })
   createdByUserId: number;
 
+  /** Set from the request's tenant context at creation — see data-import.service.ts. */
+  @Column({ name: 'tenant_id', type: 'bigint', nullable: true, transformer: new BigIntTransformer() })
+  tenantId: number | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
 

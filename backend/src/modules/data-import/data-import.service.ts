@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
+import { tenantFields } from '../../common/tenant/tenant-scope';
+import { TenantContext } from '../../common/tenant/tenant-context';
 import { ALLOWED_IMPORT_TYPES } from '../uploads/uploads.constants';
 import { StorageService } from '../uploads/storage.service';
 import { ImportJob } from './entities/import-job.entity';
@@ -34,6 +36,7 @@ export class DataImportService {
     private readonly dataSource: DataSource,
     private readonly registry: ImporterRegistry,
     private readonly storageService: StorageService,
+    private readonly tenantContext: TenantContext,
   ) {}
 
   listDomains() {
@@ -98,6 +101,7 @@ export class DataImportService {
         errorRows: rows.filter((row) => row.errors.length > 0).length,
         errorSummary: summariseErrors(rows),
         createdByUserId: userId,
+        ...tenantFields(this.tenantContext),
       }),
     );
 
