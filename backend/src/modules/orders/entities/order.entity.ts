@@ -5,6 +5,7 @@ import {
   JoinColumn,
   ManyToOne,
   PrimaryGeneratedColumn,
+  Unique,
   UpdateDateColumn,
 } from 'typeorm';
 import { BigIntTransformer } from '../../../common/transformers/bigint.transformer';
@@ -42,7 +43,14 @@ const money = () => ({
   transformer: new NumericTransformer(),
 });
 
+/**
+ * bill_number is only unique per outlet — it's a guest-facing, per-outlet
+ * sequence (e.g. BILL-20260919-0001), so two different outlets legitimately
+ * produce the same formatted number on the same day. A bare UNIQUE(bill_number)
+ * collides across outlets/tenants; see migration RescopeBillNumberUniqueToOutlet.
+ */
 @Entity({ name: 'orders' })
+@Unique('orders_outlet_bill_number_key', ['outletId', 'billNumber'])
 export class Order {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: number;
@@ -129,8 +137,8 @@ export class Order {
   @Column({ name: 'bill_id', type: 'uuid', unique: true })
   billId: string;
 
-  /** Guest-facing bill number — formatted per POS settings (e.g., BILL-20260814-0001). */
-  @Column({ name: 'bill_number', type: 'varchar', length: 255, unique: true, nullable: true })
+  /** Guest-facing bill number — formatted per POS settings (e.g., BILL-20260814-0001). Unique per outlet, see the class-level @Unique. */
+  @Column({ name: 'bill_number', type: 'varchar', length: 255, nullable: true })
   billNumber: string | null;
 
   /** Formal invoice number — generated on-demand (e.g., INV-20260814-0001). Nullable: not all orders need invoices. */
