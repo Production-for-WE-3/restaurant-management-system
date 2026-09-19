@@ -16,6 +16,8 @@ import { FoodVariant } from '../../food-variants/entities/food-variant.entity';
 import { Variant } from '../../variants/entities/variant.entity';
 import { SubVariant } from '../../variants/entities/sub-variant.entity';
 import { SkuCompositionService } from '../sku-composition.service';
+import { TenantContext } from '../../../common/tenant/tenant-context';
+import { scopedWhere, tenantFields } from '../../../common/tenant/tenant-scope';
 
 /**
  * Header aliases -> the logical column key. Covers both a plain
@@ -145,14 +147,15 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
     @InjectRepository(SubVariant)
     private readonly subVariantsRepository: Repository<SubVariant>,
     private readonly skuCompositionService: SkuCompositionService,
+    private readonly tenantContext: TenantContext = new TenantContext(),
   ) {}
 
   async validateRows(rows: ImportRawRow<Record<string, string>>[]): Promise<FoodImportRow[]> {
     const [existingFoods, categories, variants, subVariants] = await Promise.all([
-      this.foodsRepository.find({ select: { slug: true } }),
-      this.foodCategoriesRepository.find({ select: { id: true, name: true } }),
-      this.variantsRepository.find({ select: { id: true, name: true } }),
-      this.subVariantsRepository.find({ select: { id: true, name: true } }),
+      this.foodsRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { slug: true } }),
+      this.foodCategoriesRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
+      this.variantsRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
+      this.subVariantsRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
     ]);
     const existingSlugs = new Set(existingFoods.map((f) => f.slug));
     const categoryByName = new Map(categories.map((c) => [c.name.trim().toLowerCase(), c.id]));
@@ -270,6 +273,7 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         // 1. Create the Food record.
         const saved = await foodRepo.save(
           foodRepo.create({
+            ...tenantFields(this.tenantContext),
             foodCategoryId: row.foodCategoryId,
             name: row.name,
             slug: row.slug,
@@ -297,6 +301,7 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
 
           await foodVariantRepo.save(
             foodVariantRepo.create({
+              ...tenantFields(this.tenantContext),
               foodId: saved.id,
               variantId: row.variantId,
               subVariantId: row.subVariantId,
@@ -332,11 +337,11 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
 
   async buildExport(): Promise<Buffer> {
     const [foods, categories, foodVariants, variants, subVariants] = await Promise.all([
-      this.foodsRepository.find({ order: { id: 'ASC' } }),
-      this.foodCategoriesRepository.find({ select: { id: true, name: true } }),
-      this.foodVariantsRepository.find({ where: { isDefault: true }, order: { foodId: 'ASC' } }),
-      this.variantsRepository.find({ select: { id: true, name: true } }),
-      this.subVariantsRepository.find({ select: { id: true, name: true } }),
+      this.foodsRepository.find({ where: scopedWhere(this.tenantContext, {}), order: { id: 'ASC' } }),
+      this.foodCategoriesRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
+      this.foodVariantsRepository.find({ where: scopedWhere(this.tenantContext, { isDefault: true }), order: { foodId: 'ASC' } }),
+      this.variantsRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
+      this.subVariantsRepository.find({ where: scopedWhere(this.tenantContext, {}), select: { id: true, name: true } }),
     ]);
 
     const categoryById = new Map(categories.map((c) => [c.id, c.name]));
