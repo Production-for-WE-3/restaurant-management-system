@@ -426,7 +426,7 @@ export class AssistantService {
       metrics = /^orders?$/.test(q.trim())
         ? (
             await this.db.query(
-              `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total), 0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
+              `SELECT COUNT(*)::int AS orders FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
               params,
             )
           )[0]
