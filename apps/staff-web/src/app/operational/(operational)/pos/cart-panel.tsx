@@ -365,11 +365,9 @@ function EditableCart({
         {canEditSentItems
           ? sentItems.length > 0 && (
               <div className="space-y-2">
-                {pendingCount > 0 && (
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-                    Placed order ({sentItems.length})
-                  </h3>
-                )}
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                  Placed order ({sentItems.length})
+                </h3>
                 {sentGroups.map((group) => (
                   <SentItemGroupRow
                     key={`${group[0].foodId}:${group[0].foodVariantId ?? 0}:${group[0].status}`}
@@ -384,9 +382,9 @@ function EditableCart({
             )
           : (statusCounts?.length ?? 0) > 0 && (
               <div className="space-y-2">
-                {pendingCount > 0 && (
-                  <h3 className="text-xs font-semibold text-muted-foreground uppercase">Placed order</h3>
-                )}
+                <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                  Placed order ({statusCounts?.length})
+                </h3>
                 {statusCountsLoading && <ListSkeleton count={2} />}
                 {statusCounts?.map((row) => <FoodStatusCountRow key={row.foodId} row={row} />)}
               </div>
