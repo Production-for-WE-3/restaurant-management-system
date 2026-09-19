@@ -423,10 +423,17 @@ export class AssistantService {
       );
     } else if (intent === 'orderDetails') {
       assertAssistantDataAccess(intent, ['orders', 'order_items', 'foods']);
-      metrics = await this.db.query(
-        `SELECT o.order_number AS "orderNumber", o.bill_number AS "billNumber", o.order_type AS "orderType", o.order_source AS "orderSource", o.status, o.payment_status AS "paymentStatus", o.grand_total AS "grandTotal", o.created_at AS "createdAt", COALESCE(items.items, '[]'::json) AS items FROM orders o LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', f.name, 'quantity', oi.quantity) ORDER BY f.name) AS items FROM order_items oi JOIN foods f ON f.id = oi.food_id WHERE oi.order_id = o.id) items ON true WHERE 1=1${dateFilter('o.created_at')}${ids ? ' AND o.outlet_id = ANY($1::bigint[])' : ''} ORDER BY o.created_at LIMIT 100`,
-        params,
-      );
+      metrics = /^orders?$/.test(q.trim())
+        ? (
+            await this.db.query(
+              `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total), 0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
+              params,
+            )
+          )[0]
+        : await this.db.query(
+            `SELECT o.order_number AS "orderNumber", o.bill_number AS "billNumber", o.order_type AS "orderType", o.order_source AS "orderSource", o.status, o.payment_status AS "paymentStatus", o.grand_total AS "grandTotal", o.created_at AS "createdAt", COALESCE(items.items, '[]'::json) AS items FROM orders o LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', f.name, 'quantity', oi.quantity) ORDER BY f.name) AS items FROM order_items oi JOIN foods f ON f.id = oi.food_id WHERE oi.order_id = o.id) items ON true WHERE 1=1${dateFilter('o.created_at')}${ids ? ' AND o.outlet_id = ANY($1::bigint[])' : ''} ORDER BY o.created_at LIMIT 100`,
+            params,
+          );
     } else if (intent === 'serviceIssues') {
       assertAssistantDataAccess(intent, ['service_requests']);
       metrics = await this.db.query(
