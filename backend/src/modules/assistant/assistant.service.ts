@@ -48,7 +48,10 @@ export function classifyAssistantIntent(
   const q = question.trim().toLowerCase();
   if (!q) return 'conversation';
 
-  const casualGreeting = /^(hi|hello|hey|hii|hiii|hloo|yo|sup|bro|broo|namaste|good\s+(morning|afternoon|evening)|how\s+are\s+you|what\s*['’]s\s+up|whats\s+up|hey\s+there|hi\s+there)$/i;
+  if (/^orders?$/.test(q)) return 'orderDetails';
+
+  const casualGreeting =
+    /^(hi|hello|hey|hii|hiii|hloo|yo|sup|bro|broo|namaste|good\s+(morning|afternoon|evening)|how\s+are\s+you|what\s*['’]s\s+up|whats\s+up|hey\s+there|hi\s+there)$/i;
   if (casualGreeting.test(q) || q.length <= 5) return 'conversation';
 
   if (
@@ -339,7 +342,8 @@ export class AssistantService {
     // carries that member too. Fold it into 'overview' (the other
     // unhandled-by-name intent below) so `intent` is DataIntent throughout,
     // matching the behavior this already had by falling through unnamed.
-    const intent = selected.intent === 'conversation' ? 'overview' : selected.intent;
+    const intent =
+      selected.intent === 'conversation' ? 'overview' : selected.intent;
     const selectedPeriod =
       selected.period === period.value
         ? period
@@ -403,7 +407,10 @@ export class AssistantService {
         `SELECT name, item_type AS type, is_active AS "isActive" FROM foods WHERE is_active = true ORDER BY name LIMIT 200`,
       );
     } else if (intent === 'staffSummary') {
-      assertAssistantDataAccess(intent, ['employees', 'employee_outlet_assignments']);
+      assertAssistantDataAccess(intent, [
+        'employees',
+        'employee_outlet_assignments',
+      ]);
       metrics = await this.db.query(
         `SELECT employment_status AS status, COUNT(*)::int AS count FROM employees WHERE is_active = true${ids ? ' AND EXISTS (SELECT 1 FROM employee_outlet_assignments eoa WHERE eoa.employee_id = employees.id AND eoa.is_active = true AND eoa.outlet_id = ANY($1::bigint[]))' : ''} GROUP BY employment_status ORDER BY employment_status`,
         params,
