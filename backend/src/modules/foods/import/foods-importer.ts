@@ -93,10 +93,15 @@ interface FoodImportRow extends ImportValidatedRow {
   departmentType: OutletDepartmentType | null;
   /** Parsed sell price for the FoodVariant row. null = no price column present. */
   basePrice: number | null;
-  /** Raw variant name (e.g. "Chicken") — resolved to variantId. */
+  /**
+   * Echo-back fields — keyed exactly as the frontend column keys so the
+   * wizard's extractRaw reads them correctly. variantName/subVariantName
+   * are the same values; kept as aliases for commitRows readability.
+   */
+  variant: string | null;
   variantName: string | null;
   variantId: number | null;
-  /** Raw sub-variant name (e.g. "Full") — resolved to subVariantId. */
+  subVariant: string | null;
   subVariantName: string | null;
   subVariantId: number | null;
 }
@@ -240,8 +245,12 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         itemType: itemType as FoodItemType,
         departmentType,
         basePrice,
+        // Echo back under both the column-key name (for the wizard) and the
+        // internal alias (used by commitRows).
+        variant: variantNameRaw,
         variantName: variantNameRaw,
         variantId,
+        subVariant: subVariantNameRaw,
         subVariantName: subVariantNameRaw,
         subVariantId,
         errors,
