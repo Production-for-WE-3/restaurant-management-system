@@ -309,7 +309,12 @@ export class AssistantService {
     const period = this.period(q);
     const fallbackIntent = this.intent(question);
     const selected = aiPlan ?? { intent: fallbackIntent, period: period.value };
-    const intent = selected.intent;
+    // 'conversation' can never actually reach safeData() — chat() routes it
+    // to CHAT and returns before calling this — but AnalyticsPlan['intent']
+    // carries that member too. Fold it into 'overview' (the other
+    // unhandled-by-name intent below) so `intent` is DataIntent throughout,
+    // matching the behavior this already had by falling through unnamed.
+    const intent = selected.intent === 'conversation' ? 'overview' : selected.intent;
     const selectedPeriod =
       selected.period === period.value
         ? period
