@@ -979,15 +979,18 @@ export class OrdersService {
     orderId: number,
     changedBy: number | null,
     itemIds?: number[],
+    options: { order?: Order } = {},
   ): Promise<{ orderId: number; itemIds: number[]; ticketIds: number[] }> {
-    const order = await this.findOne(orderId);
-    await this.operatingHoursService.assertOperational(order.outletId);
+    const order = options.order ?? await this.findOne(orderId);
     OrdersService.assertMutable(order);
-    const items = await this.orderItemsRepository.find({
-      where: itemIds?.length
-        ? { id: In(itemIds), orderId, status: 'stock_reserved' }
-        : { orderId, status: 'stock_reserved' },
-    });
+    const [, items] = await Promise.all([
+      this.operatingHoursService.assertOperational(order.outletId),
+      this.orderItemsRepository.find({
+        where: itemIds?.length
+          ? { id: In(itemIds), orderId, status: 'stock_reserved' }
+          : { orderId, status: 'stock_reserved' },
+      }),
+    ]);
     if (itemIds?.length && items.length !== new Set(itemIds).size) {
       throw new BadRequestException('One or more order item IDs are invalid or already placed');
     }
@@ -1498,16 +1501,18 @@ export class OrdersService {
   async addItemsBatch(
     orderId: number,
     items: (CreateOrderItemDto & { addons?: CreateOrderItemAddonDto[] })[],
+    options: { order?: Order } = {},
   ): Promise<OrderItem[]> {
-    const order = await this.findOne(orderId);
-    await this.operatingHoursService.assertOperational(order.outletId);
+    const order = options.order ?? await this.findOne(orderId);
     OrdersService.assertMutable(order);
     // Fetched once for the whole batch — every item in the same order shares
     // the same outlet, so addItem() would otherwise re-fetch this identical
-    // list once per item.
-    const departments = await this.outletDepartmentsService.findByOutlet(
-      order.outletId,
-    );
+    // list once per item. Runs alongside the operating-hours check since
+    // neither depends on the other's result.
+    const [, departments] = await Promise.all([
+      this.operatingHoursService.assertOperational(order.outletId),
+      this.outletDepartmentsService.findByOutlet(order.outletId),
+    ]);
     const saved: OrderItem[] = [];
     try {
       for (const { addons, ...itemDto } of items) {

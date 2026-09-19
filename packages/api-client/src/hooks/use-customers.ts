@@ -33,12 +33,13 @@ export interface ListCustomersParams {
   outletId?: number
 }
 
-export function useCustomers(params: ListCustomersParams = {}) {
+export function useCustomers(params: ListCustomersParams = {}, options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: queryKeys.customers.list(params),
     queryFn: () => apiClient<PaginatedResponse<Customer>>(`/customers${toQueryString(params)}`),
     placeholderData: keepPreviousData,
     staleTime: STALE_TIME.customersList,
+    enabled: options?.enabled,
   })
 }
 

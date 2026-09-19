@@ -26,8 +26,8 @@ export default function StaffTablesPage() {
   const deepLinkTableId = params.get("tableId")
   const { outletId } = useActiveOutlet()
   const [categoryId, setCategoryId] = useState<number | null>(null)
-  const { activeOrderId, effectiveOutletId, isResolvingTableDeepLink, preselectedTableId, needsOrderChooser, deepLinkSession, deepLinkTableForChooser, openOrdersForDeepLinkSession, setChooserDismissedForTableId } = useOrderDeepLink({ basePath: BASE_PATH, outletId, deepLinkOrderId, deepLinkTableId })
-  const { data: activeOrder } = useOrder(activeOrderId ?? 0)
+  const { activeOrderId, deepLinkTableOrder, effectiveOutletId, isResolvingTableDeepLink, preselectedTableId, needsOrderChooser, deepLinkSession, deepLinkTableForChooser, openOrdersForDeepLinkSession, setChooserDismissedForTableId } = useOrderDeepLink({ basePath: BASE_PATH, outletId, deepLinkOrderId, deepLinkTableId })
+  const { data: activeOrder } = useOrder(activeOrderId ?? 0, deepLinkTableOrder)
   const isCancelledOrder = activeOrder?.status === "cancelled"
   const isCompletedOrder = activeOrder?.status === "completed"
   useEffect(() => { if (isCompletedOrder) router.replace(BASE_PATH) }, [isCompletedOrder, router])

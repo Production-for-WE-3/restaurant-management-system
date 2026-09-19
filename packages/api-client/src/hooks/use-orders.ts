@@ -142,11 +142,17 @@ export function useOrderStatusHistory(orderId: number) {
   })
 }
 
-export function useOrder(id: number) {
+export function useOrder(id: number, initialData?: Order) {
   return useQuery({
     queryKey: queryKeys.orders.detail(id),
     queryFn: () => apiClient<Order>(`/orders/${id}`),
     enabled: id > 0,
+    // A caller that already has this exact order from a list response (e.g.
+    // the table deep-link resolving its one open order via GET /orders?
+    // tableSessionId=) can pass it here instead of paying for a second GET
+    // /orders/:id for data it's already holding — treated as fresh under the
+    // default 30s staleTime, same as a query that just resolved normally.
+    initialData,
     // Fallback in case a websocket event is missed — mirrors useKdsBootstrap.
     refetchInterval: 30_000,
   })

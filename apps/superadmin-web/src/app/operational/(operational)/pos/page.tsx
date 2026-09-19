@@ -30,6 +30,7 @@ export default function PosPage() {
 
   const {
     activeOrderId,
+    deepLinkTableOrder,
     effectiveOutletId,
     isResolvingTableDeepLink,
     preselectedTableId,
@@ -43,7 +44,9 @@ export default function PosPage() {
   // A cancelled order can still be reached via a deep link (order switcher,
   // stale browser history, a notification) — treat it as gone rather than
   // rendering the live cart, which would let staff keep adding items to it.
-  const { data: activeOrder } = useOrder(activeOrderId ?? 0)
+  // deepLinkTableOrder seeds this with data already fetched while resolving
+  // the table tap, skipping a redundant GET /orders/:id.
+  const { data: activeOrder } = useOrder(activeOrderId ?? 0, deepLinkTableOrder)
   const isCancelledOrder = activeOrder?.status === "cancelled"
 
   // Same deal for a completed sale reached this way (table tapped again from

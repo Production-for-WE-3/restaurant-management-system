@@ -63,8 +63,14 @@ export class TableSessionsController {
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: User,
   ) {
-    await this.assertSessionAccess(id, user);
-    return this.tableSessionsService.findOneDetailed(id);
+    // findOneDetailed's own select already includes outletId — fetch once
+    // and check access against that, instead of assertSessionAccess's plain
+    // findOne() first (same row, paid for twice) followed by a second,
+    // detailed fetch. The client never sees the row until the access check
+    // below passes, so this isn't a wider read than before.
+    const detail = await this.tableSessionsService.findOneDetailed(id);
+    await this.outletAccess.assertOutletAccess(user.id, detail.outletId);
+    return detail;
   }
 
   @Post()

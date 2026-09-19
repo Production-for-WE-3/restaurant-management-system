@@ -310,8 +310,8 @@ export class OrdersController {
     @Body() dto: SendOrderItemsDto,
     @CurrentUser() user: User,
   ) {
-    await this.assertOrderAccess(id, user);
-    return this.ordersService.sendToKitchen(id, user.id, dto.itemIds);
+    const order = await this.assertOrderAccess(id, user);
+    return this.ordersService.sendToKitchen(id, user.id, dto.itemIds, { order });
   }
 
   @Post(':id/mark-ready-items-served')
@@ -384,8 +384,8 @@ export class OrdersController {
     @Body() dto: CreateOrderItemDto,
     @CurrentUser() user: User,
   ) {
-    await this.assertOrderAccess(id, user);
-    return this.ordersService.addItem(id, dto);
+    const order = await this.assertOrderAccess(id, user);
+    return this.ordersService.addItem(id, dto, { order });
   }
 
   @Post(':id/items/batch')
@@ -399,8 +399,8 @@ export class OrdersController {
     @Body() dto: CreateOrderItemsBatchDto,
     @CurrentUser() user: User,
   ) {
-    await this.assertOrderAccess(id, user);
-    return this.ordersService.addItemsBatch(id, dto.items);
+    const order = await this.assertOrderAccess(id, user);
+    return this.ordersService.addItemsBatch(id, dto.items, { order });
   }
 
   @Post(':id/invoice')

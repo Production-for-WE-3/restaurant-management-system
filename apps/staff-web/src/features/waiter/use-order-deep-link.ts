@@ -107,6 +107,13 @@ export function useOrderDeepLink({
 
   return {
     activeOrderId,
+    // The full Order object already fetched as part of resolving the
+    // table's single open order — callers pass this as useOrder()'s
+    // initialData so opening a table from the floor board doesn't pay for a
+    // second, redundant GET /orders/:id for data already in hand. Only set
+    // for the table-tap path; a `?orderId=` deep link has no list fetch to
+    // reuse, so useOrder() falls back to its normal fetch there.
+    deepLinkTableOrder,
     effectiveOutletId,
     isResolvingTableDeepLink,
     preselectedTableId,

@@ -83,13 +83,14 @@ export function TableActionsDialog({
 
   const endSession = useEndTableSession(activeSession?.id ?? 0)
   const transferSession = useTransferTableSession(activeSession?.id ?? 0)
-  const { data: availableTables } = useDiningTables({
-    outletId: table.outletId,
-    status: "available",
-    limit: 100,
-  })
   const [transferTargetId, setTransferTargetId] = useState("")
   const [showTransfer, setShowTransfer] = useState(false)
+  // Only needed once "Transfer table" is actually opened — was firing on
+  // every dialog open regardless of whether staff ever click that button.
+  const { data: availableTables } = useDiningTables(
+    { outletId: table.outletId, status: "available", limit: 100 },
+    { enabled: showTransfer },
+  )
 
   const setSessionCustomer = useSetTableSessionCustomer(activeSession?.id ?? 0)
   const [showCustomerPicker, setShowCustomerPicker] = useState(false)
@@ -97,9 +98,11 @@ export function TableActionsDialog({
   const [showCheckout, setShowCheckout] = useState(false)
 
   const queryClient = useQueryClient()
-  const { data: customers } = useCustomers({ limit: 100 })
-  const createReservation = useCreateReservation()
   const [showReserve, setShowReserve] = useState(false)
+  // Shared by the customer-picker and reserve panels — only needed once one
+  // of them is open, not on every dialog open.
+  const { data: customers } = useCustomers({ limit: 100 }, { enabled: showCustomerPicker || showReserve })
+  const createReservation = useCreateReservation()
   const [showQr, setShowQr] = useState(false)
   const [reserveCustomerId, setReserveCustomerId] = useState("")
   const [reserveAt, setReserveAt] = useState("")
