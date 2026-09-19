@@ -29,10 +29,12 @@ import {
   useOrderItems,
   useRemoveOrderItem,
   useSendOrderToKitchen,
+  useTableSessionFoodStatusCounts,
   useUpdateOrderItem,
   useUpdateOrderStatus,
   type Order,
   type OrderItem,
+  type TableSessionFoodStatusCount,
 } from "@rms/api-client/hooks/use-orders"
 import { ORDER_PAYMENT_METHODS } from "@rms/validators/orders"
 import { calculatePaymentTotals } from "@rms/validators/payment-totals"
@@ -113,6 +115,13 @@ function EditableCart({
 }) {
   const { data: items, isLoading } = useOrderItems(orderId)
   const { data: order } = useOrder(orderId)
+  // table_session_food_status_counts is a per-food rollup of everything already
+  // sent to the kitchen for this table's whole visit (across every round/order) —
+  // stock_reserved (not-yet-sent) rows are deliberately excluded from it, so it
+  // only ever covers what belongs in the read-only "Placed order" section below.
+  const { data: statusCounts, isLoading: statusCountsLoading } = useTableSessionFoodStatusCounts(
+    order?.tableSessionId ?? 0,
+  )
   const { data: menu } = useMenu(order?.outletId ?? null)
   const { data: payments } = useOrderPayments(orderId)
   const createPayment = useCreateOrderPayment(orderId)
@@ -295,27 +304,20 @@ function EditableCart({
       <h2 className="text-sm font-semibold">Cart</h2>
       <div className="max-h-[45vh] space-y-3 overflow-y-auto">
         {isLoading && <ListSkeleton count={3} />}
-        {!isLoading && (items?.data.length ?? 0) === 0 && localCart.items.length === 0 && (
-          <p className="text-sm text-muted-foreground">No items yet — tap a food to add it.</p>
-        )}
-        {localCart.items.length > 0 && (
+        {!isLoading &&
+          pendingCount === 0 &&
+          (statusCounts?.length ?? 0) === 0 && (
+            <p className="text-sm text-muted-foreground">No items yet — tap a food to add it.</p>
+          )}
+        {pendingCount > 0 && (
           <div className="space-y-2">
             <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-              In cart — not sent yet ({localCart.items.length})
+              In cart — not sent yet ({pendingCount})
             </h3>
             {localCart.items.map((item) => (
               <LocalCartItemRow key={item.localId} item={item} />
             ))}
-          </div>
-        )}
-        {(items?.data.length ?? 0) > 0 && (
-          <div className="space-y-2">
-            {localCart.items.length > 0 && (
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-                Placed order ({items?.data.length})
-              </h3>
-            )}
-            {items?.data.map((item) => (
+            {serverPendingItems.map((item) => (
               <CartItemRow
                 key={item.id}
                 orderId={orderId}
@@ -325,6 +327,20 @@ function EditableCart({
                 canCancelAfterServed={canRecordPayment}
               />
             ))}
+          </div>
+        )}
+        {/* Everything already sent to the kitchen, for this table's whole
+            visit — read-only, sourced from table_session_food_status_counts
+            (a rollup kept in sync by a DB trigger) rather than the raw
+            per-item list, since once an item is in the kitchen pipeline
+            staff act on it from the KDS/tickets, not from here. */}
+        {(statusCounts?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            {pendingCount > 0 && (
+              <h3 className="text-xs font-semibold text-muted-foreground uppercase">Placed order</h3>
+            )}
+            {statusCountsLoading && <ListSkeleton count={2} />}
+            {statusCounts?.map((row) => <FoodStatusCountRow key={row.foodId} row={row} />)}
           </div>
         )}
       </div>
@@ -656,6 +672,42 @@ function CartItemRow({
           />
         </>
       )}
+    </div>
+  )
+}
+
+const STATUS_COUNT_STAGES: {
+  key: keyof Pick<
+    TableSessionFoodStatusCount,
+    "orderedCount" | "preparingCount" | "readyCount" | "servedCount" | "cancelledCount"
+  >
+  label: string
+  className: string
+}[] = [
+  { key: "orderedCount", label: "Sent", className: "" },
+  { key: "preparingCount", label: "Preparing", className: "border-amber-500/50 text-amber-700 dark:text-amber-400" },
+  { key: "readyCount", label: "Prepared", className: "border-emerald-500/50 text-emerald-700 dark:text-emerald-400" },
+  { key: "servedCount", label: "Served", className: "" },
+  { key: "cancelledCount", label: "Cancelled", className: "border-destructive/50 text-destructive" },
+]
+
+/**
+ * Read-only — once an item is in this rollup it's already in the kitchen
+ * pipeline, edited from the KDS/tickets screens, not from the cart. One row
+ * per food, one badge per pipeline stage it currently has units in.
+ */
+function FoodStatusCountRow({ row }: { row: TableSessionFoodStatusCount }) {
+  const stages = STATUS_COUNT_STAGES.filter((stage) => row[stage.key] > 0)
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-lg border border-input p-2.5">
+      <p className="text-sm font-medium">{row.foodName}</p>
+      <div className="flex shrink-0 flex-wrap justify-end gap-1">
+        {stages.map((stage) => (
+          <Badge key={stage.key} variant="outline" className={`text-xs ${stage.className}`}>
+            {row[stage.key]} {stage.label}
+          </Badge>
+        ))}
+      </div>
     </div>
   )
 }
