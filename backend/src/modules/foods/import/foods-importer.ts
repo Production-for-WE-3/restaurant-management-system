@@ -317,6 +317,12 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
     };
 
     for (const row of rows) {
+      // Each row gets its own SAVEPOINT — without this, one row's constraint
+      // violation aborts the whole shared chunk transaction, and every row
+      // after it fails with a useless "current transaction is aborted"
+      // instead of its own real error.
+      const savepoint = `import_row_${row.rowNumber}`;
+      await manager.query(`SAVEPOINT "${savepoint}"`);
       try {
         // 1. Create the Food record.
         const saved = await foodRepo.save(
@@ -372,8 +378,10 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
           await this.skuCompositionService.recomposeFoodTree(saved.id, manager);
         }
 
+        await manager.query(`RELEASE SAVEPOINT "${savepoint}"`);
         succeeded.push({ rowNumber: row.rowNumber, entityId: saved.id });
       } catch (error) {
+        await manager.query(`ROLLBACK TO SAVEPOINT "${savepoint}"`);
         failures.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : 'Failed to create food' });
       }
     }

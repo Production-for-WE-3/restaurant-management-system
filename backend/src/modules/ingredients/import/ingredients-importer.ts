@@ -159,6 +159,12 @@ export class IngredientsImporter implements ImportDomainConfig<Record<string, st
     const succeeded: ImportCommitResult['succeeded'] = [];
 
     for (const row of rows) {
+      // Each row gets its own SAVEPOINT — without this, one row's constraint
+      // violation aborts the whole shared chunk transaction, and every row
+      // after it fails with a useless "current transaction is aborted"
+      // instead of its own real error.
+      const savepoint = `import_row_${row.rowNumber}`;
+      await manager.query(`SAVEPOINT "${savepoint}"`);
       try {
         if (row.existingId) {
           await repo.update(scopedWhere(this.tenantContext, { id: row.existingId }), {
@@ -166,6 +172,7 @@ export class IngredientsImporter implements ImportDomainConfig<Record<string, st
             ingredientCategoryId: row.categoryId!,
             baseUnitId: row.unitId!,
           });
+          await manager.query(`RELEASE SAVEPOINT "${savepoint}"`);
           succeeded.push({ rowNumber: row.rowNumber, entityId: row.existingId });
         } else {
           const created = await repo.save(
@@ -179,9 +186,11 @@ export class IngredientsImporter implements ImportDomainConfig<Record<string, st
               ...tenantFields(this.tenantContext),
             }),
           );
+          await manager.query(`RELEASE SAVEPOINT "${savepoint}"`);
           succeeded.push({ rowNumber: row.rowNumber, entityId: created.id });
         }
       } catch (error) {
+        await manager.query(`ROLLBACK TO SAVEPOINT "${savepoint}"`);
         failures.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }

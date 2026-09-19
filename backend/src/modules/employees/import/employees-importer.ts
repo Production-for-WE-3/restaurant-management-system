@@ -113,6 +113,12 @@ export class EmployeesImporter implements ImportDomainConfig<Record<string, stri
     const succeeded: ImportCommitResult['succeeded'] = [];
 
     for (const row of rows) {
+      // Each row gets its own SAVEPOINT — without this, one row's constraint
+      // violation aborts the whole shared chunk transaction, and every row
+      // after it fails with a useless "current transaction is aborted"
+      // instead of its own real error.
+      const savepoint = `import_row_${row.rowNumber}`;
+      await manager.query(`SAVEPOINT "${savepoint}"`);
       try {
         const created = await repo.save(
           repo.create({
@@ -124,8 +130,10 @@ export class EmployeesImporter implements ImportDomainConfig<Record<string, stri
           }),
         );
         await manager.query('INSERT INTO employee_outlet_assignments (employee_id, outlet_id) VALUES ($1, $2) ON CONFLICT (employee_id, outlet_id) DO NOTHING', [created.id, row.outletId!]);
+        await manager.query(`RELEASE SAVEPOINT "${savepoint}"`);
         succeeded.push({ rowNumber: row.rowNumber, entityId: created.id });
       } catch (error) {
+        await manager.query(`ROLLBACK TO SAVEPOINT "${savepoint}"`);
         failures.push({ rowNumber: row.rowNumber, error: error instanceof Error ? error.message : 'Unknown error' });
       }
     }
