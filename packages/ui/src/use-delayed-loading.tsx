@@ -17,7 +17,7 @@ import { useEffect, useRef, useState } from "react"
  */
 export function useDelayedLoading(
   isLoading: boolean,
-  { delay = 200, minDuration = 400 }: { delay?: number; minDuration?: number } = {},
+  { delay = 200, minDuration = 150 }: { delay?: number; minDuration?: number } = {},
 ): boolean {
   const [show, setShow] = useState(false)
   const shownAtRef = useRef(0)
