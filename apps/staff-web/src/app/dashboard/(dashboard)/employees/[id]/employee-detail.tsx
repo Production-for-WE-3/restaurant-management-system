@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { DetailPageSkeleton, NotFoundCard } from "@/components/ui/skeletons"
 import { useDelayedLoading } from "@/components/ui/use-delayed-loading"
 import { useCurrentUser } from "@/lib/auth/current-user-context"
-import { useOutlet, useOutlets, useSuperadminOutlets } from "@/hooks/use-outlets"
+import { useOutlet, useOutlets } from "@/hooks/use-outlets"
 import { useOutletDepartments } from "@/hooks/use-outlet-departments"
 import { useUsers } from "@/hooks/use-users"
 import {
@@ -52,7 +52,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
   const { data: positions } = usePositions()
   const { data: users } = useUsers({ limit: 100 })
   const { data: outlets } = useOutlets({ limit: 100 })
-  const { data: superadminOutlets } = useSuperadminOutlets({ enabled: isSuperadmin })
+
   const primaryOutletId = employee?.outletIds?.[0] ?? 0
   const { data: outlet } = useOutlet(primaryOutletId)
   const { data: performance } = useEmployeePerformance(employeeId)
@@ -261,7 +261,7 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
                   <FormItem>
                     <FormLabel>Outlet</FormLabel>
                     <Select
-                      items={(false ? superadminOutlets : outlets?.data)?.map((o) => ({ value: String(o.id), label: `${o.tenant?.name ? `${o.tenant.name} · ` : ""}${o.name}` }))}
+                      items={outlets?.data?.map((o) => ({ value: String(o.id), label: o.name }))}
                       value={field.value ? String(field.value) : ""}
                       onValueChange={(v) => {
                         field.onChange(Number(v))
@@ -272,9 +272,9 @@ export function EmployeeDetail({ employeeId }: { employeeId: number }) {
                         <SelectValue placeholder="Select an outlet" />
                       </SelectTrigger>
                       <SelectContent>
-                        {(false ? superadminOutlets : outlets?.data)?.map((o) => (
+                        {outlets?.data?.map((o) => (
                           <SelectItem key={o.id} value={String(o.id)}>
-                            {o.tenant?.name ? `${o.tenant.name} · ` : ""}{o.name}
+                            {o.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
