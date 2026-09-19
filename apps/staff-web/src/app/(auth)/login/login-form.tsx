@@ -90,7 +90,6 @@ export function LoginForm() {
       }
 
       router.push("/dashboard")
-      router.refresh()
     } catch {
       toast.error("Unable to sign in right now. Please try again.")
     } finally {
