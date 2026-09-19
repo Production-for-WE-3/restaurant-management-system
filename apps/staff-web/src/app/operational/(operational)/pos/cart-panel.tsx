@@ -3,7 +3,18 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { FlameIcon, MinusIcon, PauseIcon, PlayIcon, PlusIcon, PrinterIcon, XIcon } from "lucide-react"
+import {
+  CheckCircle2Icon,
+  CircleDollarSignIcon,
+  FlameIcon,
+  MinusIcon,
+  PauseIcon,
+  PlayIcon,
+  PlusIcon,
+  PrinterIcon,
+  ReceiptIcon,
+  XIcon,
+} from "lucide-react"
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@rms/auth/current-user-context"
@@ -11,6 +22,7 @@ import { Badge } from "@rms/ui/badge"
 import { BillSummary } from "@rms/ui/bill-summary"
 import { Button } from "@rms/ui/button"
 import { Input } from "@rms/ui/input"
+import { Label } from "@rms/ui/label"
 import { OrderDiscountForm } from "@rms/ui/order-discount-form"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@rms/ui/select"
 import { Separator } from "@rms/ui/separator"
@@ -415,9 +427,12 @@ function EditableCart({
       {order && (
         <>
           <Separator />
-          <div className="space-y-1.5">
+          <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase">Payment info</h3>
+              <h3 className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase">
+                <ReceiptIcon className="size-3.5" />
+                Payment
+              </h3>
               <Button
                 variant="outline"
                 size="sm"
@@ -427,95 +442,137 @@ function EditableCart({
                 View / print bill
               </Button>
             </div>
-            <div className="grid grid-cols-2 gap-1 text-sm">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span className="text-right">{order.subtotal}</span>
-              <span className="text-muted-foreground">Discount</span>
-              <span className="text-right">{order.discountAmount}</span>
-              <span className="font-medium">Grand total</span>
-              <span className="text-right font-medium">{order.grandTotal}</span>
-              <span className="text-muted-foreground">Paid</span>
-              <span className="text-right">{cashPaidAmount}</span>
-              {creditAmount > 0 && (
-                <>
-                  <span className="text-muted-foreground">Credit</span>
-                  <span className="text-right">{creditAmount}</span>
-                </>
-              )}
-              <span className="font-medium">Due</span>
-              <span className="text-right font-medium">{displayedDueAmount}</span>
+
+            {/* Totals — Due is the one number that matters at a glance, so it's
+                the only row pulled out of the muted list and colored. */}
+            <div className="rounded-lg border border-input p-3">
+              <div className="grid grid-cols-2 gap-y-1 text-sm text-muted-foreground">
+                <span>Subtotal</span>
+                <span className="text-right tabular-nums">{order.subtotal}</span>
+                {order.discountAmount > 0 && (
+                  <>
+                    <span>Discount</span>
+                    <span className="text-right tabular-nums">-{order.discountAmount}</span>
+                  </>
+                )}
+                <span className="font-medium text-foreground">Grand total</span>
+                <span className="text-right font-medium text-foreground tabular-nums">{order.grandTotal}</span>
+                <span>Paid</span>
+                <span className="text-right tabular-nums">{cashPaidAmount}</span>
+                {creditAmount > 0 && (
+                  <>
+                    <span>On credit</span>
+                    <span className="text-right tabular-nums">{creditAmount}</span>
+                  </>
+                )}
+              </div>
+              <Separator className="my-2" />
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">{displayedDueAmount > 0 ? "Due" : "Status"}</span>
+                {displayedDueAmount > 0 ? (
+                  <span className="text-lg font-semibold tabular-nums text-amber-600 dark:text-amber-400">
+                    {displayedDueAmount}
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2Icon className="size-4" />
+                    Paid in full
+                  </span>
+                )}
+              </div>
             </div>
+
             {canRecordPayment && <OrderDiscountForm orderId={orderId} />}
+
             {(payments?.data.length ?? 0) > 0 && (
-              <div className="space-y-1 pt-1">
-                {payments?.data.map((payment) => (
-                  <div key={payment.id} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <Badge variant={payment.type === "refund" ? "destructive" : "secondary"}>{payment.type}</Badge>
-                      <span>{payment.method}</span>
+              <div className="space-y-1">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase">Payments</h4>
+                <div className="divide-y divide-border rounded-lg border border-input">
+                  {payments?.data.map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between gap-2 px-2.5 py-1.5 text-xs">
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant={payment.type === "refund" ? "destructive" : "secondary"}>{payment.type}</Badge>
+                        <span className="capitalize text-muted-foreground">{payment.method}</span>
+                      </div>
+                      <span className="font-medium tabular-nums">{payment.amount}</span>
                     </div>
-                    <span>{payment.amount}</span>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
             {canRecordPayment && (
-              <>
-                <div className="grid grid-cols-2 gap-2 pt-2">
-                  <Select
-                    value={paymentMethod}
-                    onValueChange={(value) => {
-                      if (!value) return
-                      setPaymentMethod(value as (typeof ORDER_PAYMENT_METHODS)[number])
-                      if (value === "credit") setCreditCustomerId(order.customerId ?? undefined)
-                    }}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ORDER_PAYMENT_METHODS.map((method) => (
-                        <SelectItem key={method} value={method}>
-                          {method}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={paymentAmount}
-                    onChange={(e) => setPaymentAmount(Number(e.target.value))}
-                  />
+              <div className="space-y-2.5 rounded-lg border border-dashed border-input p-3">
+                <div className="flex items-center gap-1.5">
+                  <CircleDollarSignIcon className="size-4 text-primary" />
+                  <h4 className="text-sm font-medium">Record a payment</h4>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="payment-method">Method</Label>
+                    <Select
+                      value={paymentMethod}
+                      onValueChange={(value) => {
+                        if (!value) return
+                        setPaymentMethod(value as (typeof ORDER_PAYMENT_METHODS)[number])
+                        if (value === "credit") setCreditCustomerId(order.customerId ?? undefined)
+                      }}
+                    >
+                      <SelectTrigger id="payment-method" className="w-full capitalize">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ORDER_PAYMENT_METHODS.map((method) => (
+                          <SelectItem key={method} value={method} className="capitalize">
+                            {method}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="payment-amount">Amount</Label>
+                    <Input
+                      id="payment-amount"
+                      type="number"
+                      step="0.01"
+                      value={paymentAmount}
+                      onChange={(e) => setPaymentAmount(Number(e.target.value))}
+                    />
+                  </div>
                 </div>
                 {paymentMethod === "credit" && (
-                  <Select
-                    value={creditCustomerId ? String(creditCustomerId) : ""}
-                    onValueChange={(value) => setCreditCustomerId(value ? Number(value) : undefined)}
-                  >
-                    <SelectTrigger className="w-full" disabled={customersLoading}>
-                      <SelectValue placeholder={customersLoading ? "Loading…" : "Charge to customer's tab"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customers?.data.map((customer) => (
-                        <SelectItem key={customer.id} value={String(customer.id)}>
-                          {customer.name}
-                          {customer.phone ? ` (${customer.phone})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-1">
+                    <Label htmlFor="payment-credit-customer">Charge to</Label>
+                    <Select
+                      value={creditCustomerId ? String(creditCustomerId) : ""}
+                      onValueChange={(value) => setCreditCustomerId(value ? Number(value) : undefined)}
+                    >
+                      <SelectTrigger id="payment-credit-customer" className="w-full" disabled={customersLoading}>
+                        <SelectValue placeholder={customersLoading ? "Loading…" : "Select a customer's tab"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {customers?.data.map((customer) => (
+                          <SelectItem key={customer.id} value={String(customer.id)}>
+                            {customer.name}
+                            {customer.phone ? ` (${customer.phone})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
                 {paymentMethod === "credit" && creditCustomerId && creditAccount && (
-                  <div className="grid grid-cols-2 gap-1 rounded-md border border-input p-2 text-xs">
+                  <div className="grid grid-cols-2 gap-1 rounded-md bg-muted/50 p-2 text-xs">
                     <span className="text-muted-foreground">Current credit owed</span>
-                    <span className="text-right">{creditAccount.outstandingBalance}</span>
+                    <span className="text-right tabular-nums">{creditAccount.outstandingBalance}</span>
                     <span className="text-muted-foreground">Credit limit</span>
-                    <span className="text-right">{creditAccount.creditLimit > 0 ? creditAccount.creditLimit : "None"}</span>
+                    <span className="text-right tabular-nums">
+                      {creditAccount.creditLimit > 0 ? creditAccount.creditLimit : "None"}
+                    </span>
                     <span className="font-medium">Remaining credit</span>
                     <span
-                      className={`text-right font-medium ${
+                      className={`text-right font-medium tabular-nums ${
                         remainingCredit !== null && remainingCredit < paymentAmount ? "text-destructive" : ""
                       }`}
                     >
@@ -539,18 +596,29 @@ function EditableCart({
                   {createPayment.isPending ? "Recording..." : "Add payment"}
                 </Button>
                 <ClosedHoursOverrideButton closed={operatingHours?.enabled === true && operatingHours.isOpen === false} label="add payment" onConfirm={async () => { await createPaymentOverride.mutateAsync({ type: "payment", method: paymentMethod, amount: paymentAmount, customerId: paymentMethod === "credit" ? creditCustomerId : undefined }); toast.success("Payment recorded") }} />
+              </div>
+            )}
+
+            {canRecordPayment && (
+              <>
                 <Button
                   className="w-full"
+                  size="lg"
                   onClick={handleCompleteSale}
                   disabled={displayedDueAmount > 0 || serverPendingItems.length > 0 || updateStatus.isPending || !isOnline}
                 >
-                  {!isOnline
-                    ? "Offline"
-                    : displayedDueAmount > 0
-                      ? `Due ${displayedDueAmount}`
-                      : serverPendingItems.length > 0
-                        ? `Send ${serverPendingItems.length} item${serverPendingItems.length === 1 ? "" : "s"} to kitchen first`
-                        : "Complete sale"}
+                  {!isOnline ? (
+                    "Offline"
+                  ) : displayedDueAmount > 0 ? (
+                    `Due ${displayedDueAmount}`
+                  ) : serverPendingItems.length > 0 ? (
+                    `Send ${serverPendingItems.length} item${serverPendingItems.length === 1 ? "" : "s"} to kitchen first`
+                  ) : (
+                    <>
+                      <CheckCircle2Icon />
+                      Complete sale
+                    </>
+                  )}
                 </Button>
                 <ClosedHoursOverrideButton closed={operatingHours?.enabled === true && operatingHours.isOpen === false} label="complete sale" onConfirm={handleCompleteSaleOverride} />
               </>
