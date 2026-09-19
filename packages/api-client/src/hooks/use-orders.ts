@@ -64,6 +64,8 @@ export interface Order {
 export interface OrderItem {
   id: number
   orderId: number
+  /** Denormalized from the parent order — lets items be queried across a whole table visit, which can span several orders. */
+  tableSessionId: number | null
   foodId: number
   foodVariantId: number | null
   preparationDepartmentId: number | null
@@ -465,6 +467,46 @@ export function useOrderItems(orderId: number) {
     enabled: orderId > 0,
     // The KDS realtime push is the primary path for kitchen status changes;
     // this poll is the fallback if the socket connection drops.
+    refetchInterval: realtimeConnected ? false : 30_000,
+  })
+}
+
+/** Every item ordered during a table's whole visit, across every Order row the session has accumulated (new rounds, split bills). */
+export function useTableSessionItems(tableSessionId: number) {
+  const realtimeConnected = useKdsSocketConnected()
+
+  return useQuery({
+    queryKey: queryKeys.tableSessions.items(tableSessionId),
+    queryFn: () =>
+      apiClient<PaginatedResponse<OrderItem>>(`/order-items${toQueryString({ tableSessionId, limit: 100 })}`),
+    enabled: tableSessionId > 0,
+    refetchInterval: realtimeConnected ? false : 30_000,
+  })
+}
+
+export interface TableSessionFoodStatusCount {
+  foodId: number
+  foodName: string
+  tableSessionId: number
+  orderedCount: number
+  preparingCount: number
+  readyCount: number
+  servedCount: number
+  cancelledCount: number
+  updatedAt: string
+}
+
+/** Per-food kitchen-pipeline counts for a table's whole visit — a DB-trigger-maintained rollup, not computed client-side. */
+export function useTableSessionFoodStatusCounts(tableSessionId: number) {
+  const realtimeConnected = useKdsSocketConnected()
+
+  return useQuery({
+    queryKey: queryKeys.tableSessions.statusCounts(tableSessionId),
+    queryFn: () =>
+      apiClient<TableSessionFoodStatusCount[]>(
+        `/order-items/status-counts${toQueryString({ tableSessionId })}`,
+      ),
+    enabled: tableSessionId > 0,
     refetchInterval: realtimeConnected ? false : 30_000,
   })
 }

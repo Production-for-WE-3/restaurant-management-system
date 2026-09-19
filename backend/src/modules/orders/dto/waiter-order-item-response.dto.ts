@@ -46,6 +46,9 @@ export class WaiterOrderItemResponseDto {
   @ApiProperty()
   orderId: number;
 
+  @ApiProperty({ required: false, nullable: true })
+  tableSessionId: number | null;
+
   @ApiProperty()
   foodId: number;
 

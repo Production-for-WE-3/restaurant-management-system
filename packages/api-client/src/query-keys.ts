@@ -114,6 +114,8 @@ export const queryKeys = {
     lists: () => [...queryKeys.tableSessions.all, "list"] as const,
     list: (params?: unknown) => [...queryKeys.tableSessions.lists(), params] as const,
     detail: (id: number) => [...queryKeys.tableSessions.all, "detail", id] as const,
+    items: (id: number) => [...queryKeys.tableSessions.all, "items", id] as const,
+    statusCounts: (id: number) => [...queryKeys.tableSessions.all, "status-counts", id] as const,
   },
   orders: {
     all: ["orders"] as const,

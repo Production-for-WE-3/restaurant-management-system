@@ -66,6 +66,7 @@ import { OrderItem } from './entities/order-item.entity';
 import { OrderStatusHistory } from './entities/order-status-history.entity';
 import { Order } from './entities/order.entity';
 import type { OrderStatus } from './entities/order.entity';
+import { TableSessionFoodStatusCount } from './entities/table-session-food-status-count.entity';
 
 export interface OrderItemWithRelations extends OrderItem {
   addons: OrderItemAddon[];
@@ -126,6 +127,8 @@ export class OrdersService {
     private readonly orderPaymentsRepository: Repository<OrderPayment>,
     @InjectRepository(OrderItemIngredientReservation)
     private readonly reservationsRepository: Repository<OrderItemIngredientReservation>,
+    @InjectRepository(TableSessionFoodStatusCount)
+    private readonly tableSessionFoodStatusCountsRepository: Repository<TableSessionFoodStatusCount>,
     @Inject(forwardRef(() => KitchenTicketsService))
     private readonly kitchenTicketsService: KitchenTicketsService,
     private readonly gateway: KitchenTicketsGateway,
@@ -1236,10 +1239,10 @@ export class OrdersService {
   async listItems(
     query: ListOrderItemsQueryDto,
   ): Promise<PaginatedResponse<WaiterOrderItemResponseDto>> {
-    const { page, limit, orderId } = query;
+    const { page, limit, orderId, tableSessionId } = query;
 
     const [items, total] = await this.orderItemsRepository.findAndCount({
-      where: { orderId },
+      where: orderId !== undefined ? { orderId } : { tableSessionId },
       order: { createdAt: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -1249,6 +1252,34 @@ export class OrdersService {
       data: await this.toWaiterItems(items),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
     };
+  }
+
+  /**
+   * Reads table_session_food_status_counts — a rollup kept in sync by a DB
+   * trigger on order_items (see migration 1781300000000), not written here.
+   * One row per food currently active in this table's kitchen pipeline,
+   * with how many units sit in each stage right now.
+   */
+  async listFoodStatusCountsForTableSession(tableSessionId: number) {
+    const rows = await this.tableSessionFoodStatusCountsRepository.find({
+      where: { tableSessionId },
+    });
+    const foods = await this.foodsService.findByIds(
+      rows.map((row) => row.foodId),
+    );
+    const foodNameById = new Map(foods.map((food) => [food.id, food.name]));
+
+    return rows.map((row) => ({
+      foodId: row.foodId,
+      foodName: foodNameById.get(row.foodId) ?? `Item #${row.foodId}`,
+      tableSessionId: row.tableSessionId,
+      orderedCount: row.orderedCount,
+      preparingCount: row.preparingCount,
+      readyCount: row.readyCount,
+      servedCount: row.servedCount,
+      cancelledCount: row.cancelledCount,
+      updatedAt: row.updatedAt,
+    }));
   }
 
   /**
@@ -1302,6 +1333,7 @@ export class OrdersService {
     return items.map((item) => ({
       id: item.id,
       orderId: item.orderId,
+      tableSessionId: item.tableSessionId,
       foodId: item.foodId,
       foodName: foodNameById.get(item.foodId) ?? `Item #${item.foodId}`,
       foodVariantId: item.foodVariantId,
@@ -1482,6 +1514,7 @@ export class OrdersService {
       .into(OrderItem)
       .values({
         orderId,
+        tableSessionId: order.tableSessionId ?? null,
         foodId: dto.foodId,
         foodVariantId: dto.foodVariantId ?? null,
         preparationDepartmentId,

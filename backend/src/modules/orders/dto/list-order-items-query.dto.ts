@@ -1,16 +1,27 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt } from 'class-validator';
+import { IsInt, IsOptional } from 'class-validator';
 import { PaginationQueryDto } from '../../../common/dto/pagination-query.dto';
 
 export class ListOrderItemsQueryDto extends PaginationQueryDto {
-  // Required, not optional: an unscoped list would dump order items across
-  // every outlet in the system to any caller with orders.view (see
-  // OrderItemsController#findAll, which asserts outlet access against this
-  // order before listing). No current caller — staff app or backend — lists
-  // without an orderId; see use-orders.ts#useOrderItems.
-  @ApiProperty()
+  // Exactly one of orderId/tableSessionId is required, not optional: an
+  // unscoped list would dump order items across every outlet in the system
+  // to any caller with orders.view (see OrderItemsController#findAll, which
+  // asserts outlet access against whichever one is given before listing).
+  // See use-orders.ts#useOrderItems (orderId) and
+  // #useTableSessionItems (tableSessionId).
+  @ApiPropertyOptional()
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
-  orderId: number;
+  orderId?: number;
+
+  // Items ordered during this table's whole visit, across every Order row
+  // it has accumulated (a session isn't 1:1 with an order — see
+  // OrdersService#findOpenForTableSession).
+  @ApiPropertyOptional()
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  tableSessionId?: number;
 }

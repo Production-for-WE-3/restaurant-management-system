@@ -12,6 +12,7 @@ import { NumericTransformer } from '../../../common/transformers/numeric.transfo
 import { Food } from '../../foods/entities/food.entity';
 import { FoodVariant } from '../../food-variants/entities/food-variant.entity';
 import { OutletDepartment } from '../../outlet-departments/entities/outlet-department.entity';
+import { TableSession } from '../../table-sessions/entities/table-session.entity';
 import { Order } from './order.entity';
 
 export type OrderItemStatus =
@@ -43,6 +44,24 @@ export class OrderItem {
   @ManyToOne(() => Order, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'order_id' })
   order: Order;
+
+  /**
+   * Denormalized from order.tableSessionId at creation time. A session can
+   * span several Order rows over its visit (new round, split bill), so this
+   * lets "every item ordered during this table's visit" be queried directly
+   * off order_items instead of joining through orders.
+   */
+  @Column({
+    name: 'table_session_id',
+    type: 'bigint',
+    transformer: new BigIntTransformer(),
+    nullable: true,
+  })
+  tableSessionId: number | null;
+
+  @ManyToOne(() => TableSession, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'table_session_id' })
+  tableSession: TableSession | null;
 
   @Column({
     name: 'food_id',

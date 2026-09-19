@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -18,6 +19,7 @@ import { ExposeResponseFields } from '../../common/interceptors/expose-response-
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { OutletAccessService } from '../auth/outlet-access.service';
 import { PermissionsService } from '../auth/permissions.service';
+import { TableSessionsService } from '../table-sessions/table-sessions.service';
 import { User } from '../users/entities/user.entity';
 import { CreateOrderItemAddonDto } from './dto/create-order-item-addon.dto';
 import { ListOrderItemsQueryDto } from './dto/list-order-items-query.dto';
@@ -35,6 +37,7 @@ export class OrderItemsController {
     private readonly ordersService: OrdersService,
     private readonly outletAccess: OutletAccessService,
     private readonly permissionsService: PermissionsService,
+    private readonly tableSessionsService: TableSessionsService,
   ) {}
 
   /** Resolves the item's parent order and asserts outlet access on it — same choke-point pattern as OrdersController#assertOrderAccess. */
@@ -58,19 +61,51 @@ export class OrderItemsController {
     return order;
   }
 
+  /** Same choke point as assertOrderAccess, for the tableSessionId branch of the list endpoint. */
+  private async assertTableSessionAccess(tableSessionId: number, user: User) {
+    const session = await this.tableSessionsService.findOne(tableSessionId);
+    await this.outletAccess.assertOutletAccess(user.id, session.outletId);
+    return session;
+  }
+
   @Get()
   @RequirePermissions('orders.view')
   @ExposeResponseFields('createdAt', 'updatedAt')
   @ApiOperation({
     summary:
-      "Lists an order's items (paginated) — minimal, waiter-facing shape with food/variant names embedded so callers never need a follow-up request just to render a row.",
+      "Lists items for an order, or every item ordered during a table session's whole visit (pass exactly one of orderId/tableSessionId) — minimal, waiter-facing shape with food/variant names embedded so callers never need a follow-up request just to render a row.",
   })
   async findAll(
     @Query() query: ListOrderItemsQueryDto,
     @CurrentUser() user: User,
   ) {
-    await this.assertOrderAccess(query.orderId, user);
+    if ((query.orderId === undefined) === (query.tableSessionId === undefined)) {
+      throw new BadRequestException(
+        'Pass exactly one of orderId or tableSessionId',
+      );
+    }
+    if (query.orderId !== undefined) {
+      await this.assertOrderAccess(query.orderId, user);
+    } else {
+      await this.assertTableSessionAccess(query.tableSessionId!, user);
+    }
     return this.ordersService.listItems(query);
+  }
+
+  @Get('status-counts')
+  @RequirePermissions('orders.view')
+  @ApiOperation({
+    summary:
+      "Per-food kitchen-pipeline counts (ordered/preparing/ready/served/cancelled) for a table session's whole visit — a rollup kept in sync by a DB trigger, not computed on request.",
+  })
+  async statusCounts(
+    @Query('tableSessionId', ParseIntPipe) tableSessionId: number,
+    @CurrentUser() user: User,
+  ) {
+    await this.assertTableSessionAccess(tableSessionId, user);
+    return this.ordersService.listFoodStatusCountsForTableSession(
+      tableSessionId,
+    );
   }
 
   @Get(':id')

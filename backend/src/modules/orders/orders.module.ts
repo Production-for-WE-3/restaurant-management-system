@@ -26,6 +26,7 @@ import { OrderItemIngredientReservation } from './entities/order-item-ingredient
 import { OrderItem } from './entities/order-item.entity';
 import { OrderStatusHistory } from './entities/order-status-history.entity';
 import { Order } from './entities/order.entity';
+import { TableSessionFoodStatusCount } from './entities/table-session-food-status-count.entity';
 import { OrderItemsController } from './order-items.controller';
 import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
@@ -39,6 +40,7 @@ import { TableSessionOpenController } from './table-session-open.controller';
       OrderItemAddon,
       OrderStatusHistory,
       OrderItemIngredientReservation,
+      TableSessionFoodStatusCount,
       // OrderPayment "belongs" to OrderPaymentsModule, but OrdersService needs
       // direct read access to sum payments for recalculatePayments() —
       // registering the same entity's repository here avoids a circular
