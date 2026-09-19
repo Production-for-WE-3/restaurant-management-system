@@ -42,6 +42,52 @@ type AnalyticsPlan = {
   groupBy?: 'day' | 'type';
 };
 
+export function classifyAssistantIntent(
+  question: string,
+): DataIntent | 'conversation' {
+  const q = question.trim().toLowerCase();
+  if (!q) return 'conversation';
+
+  const casualGreeting = /^(hi|hello|hey|hii|hiii|hloo|yo|sup|bro|broo|namaste|good\s+(morning|afternoon|evening)|how\s+are\s+you|what\s*['’]s\s+up|whats\s+up|hey\s+there|hi\s+there)$/i;
+  if (casualGreeting.test(q) || q.length <= 5) return 'conversation';
+
+  if (
+    /inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(
+      q,
+    )
+  )
+    return 'inventory';
+  if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu';
+  if (/staff|employee|employees|team member/.test(q)) return 'staffSummary';
+  if (/payment|payments|cash|card|refund/.test(q)) return 'payments';
+  if (
+    /my\s+order|order.*(going|status|ready|progress|where|done|placed|made)|any\s+orders?|have\s+we\s+(done|made|placed)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(
+      q,
+    )
+  )
+    return 'orderDetails';
+  if (
+    /table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(
+      q,
+    )
+  )
+    return 'occupancy';
+  if (/complaint|issue|grievance|service request/.test(q))
+    return 'serviceIssues';
+  if (/cancel/.test(q)) return 'cancellations';
+  if (/booking|reservation/.test(q)) return 'bookings';
+  if (/customer|guest/.test(q)) return 'customers';
+  if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue';
+  if (
+    /summary|overview|overall|business\s+(status|health)|today|yesterday|last\s+(7|30)\s+days|this\s+(week|month)/.test(
+      q,
+    )
+  )
+    return 'overview';
+
+  return 'conversation';
+}
+
 @Injectable()
 export class AssistantService {
   constructor(
@@ -276,36 +322,8 @@ export class AssistantService {
       value: 'today' as const,
     };
   }
-  private intent(question: string): DataIntent {
-    const q = question.toLowerCase();
-    if (
-      /inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(
-        q,
-      )
-    )
-      return 'inventory';
-    if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu';
-    if (/staff|employee|employees|team member/.test(q)) return 'staffSummary';
-    if (/payment|payments|cash|card|refund/.test(q)) return 'payments';
-    if (
-      /my\s+order|order.*(going|status|ready|progress|where|done|placed|made)|any\s+orders?|have\s+we\s+(done|made|placed)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(
-        q,
-      )
-    )
-      return 'orderDetails';
-    if (
-      /table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(
-        q,
-      )
-    )
-      return 'occupancy';
-    if (/complaint|issue|grievance|service request/.test(q))
-      return 'serviceIssues';
-    if (/cancel/.test(q)) return 'cancellations';
-    if (/booking|reservation/.test(q)) return 'bookings';
-    if (/customer|guest/.test(q)) return 'customers';
-    if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue';
-    return 'overview';
+  private intent(question: string): DataIntent | 'conversation' {
+    return classifyAssistantIntent(question);
   }
   private async safeData(
     question: string,
@@ -488,13 +506,13 @@ export class AssistantService {
     // context, but never receives business rows unless the request maps to a
     // permitted data intent.
     const selectedIntent =
-      fallbackIntent !== 'overview'
+      fallbackIntent !== 'conversation' && fallbackIntent !== 'overview'
         ? fallbackIntent
         : plan?.intent && plan.intent !== 'conversation'
           ? plan.intent
-          : plan?.intent === 'conversation'
-            ? 'conversation'
-            : 'overview';
+          : 'conversation';
+    const safeIntent: DataIntent =
+      selectedIntent === 'conversation' ? 'overview' : selectedIntent;
     const effectivePlan = plan?.intent === selectedIntent ? plan : null;
     await this.assertIntentAccess(user, selectedIntent);
 
@@ -532,6 +550,19 @@ export class AssistantService {
             ),
           }
         : await this.safeData(question, ids, effectivePlan);
+
+    if (safeIntent !== 'overview' && data.intent === 'overview') {
+      const fix = { ...data, intent: safeIntent };
+      return {
+        route,
+        answer: await this.llm(question, {
+          responseMode: 'restaurant_data',
+          restaurantName: restaurant.name,
+          ...fix,
+        }),
+        ...(route === 'DATA' ? { data: fix } : {}),
+      };
+    }
 
     const llmContext = {
       responseMode: 'restaurant_data',
