@@ -24,7 +24,7 @@ export const createFoodSchema = z.object({
   slug: z
     .string()
     .min(2)
-    .regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, "lowercase, alphanumeric, hyphen-separated"),
+    .regex(/^[a-z0-9]+(?:[.-][a-z0-9]+)*$/, "lowercase, alphanumeric, dot or hyphen-separated"),
   /** This level's SKU piece, e.g. MOMO. Composed with variant segments into the full code. */
   skuSegment: z.string().max(32).optional(),
   imageUrl: z.string().optional(),
