@@ -193,7 +193,7 @@ export function ImportWizardDialog({ config }: { config: DataImportDomainConfig 
       }}
     >
       <DialogTrigger render={<Button variant="outline">Import {config.label}</Button>} />
-      <DialogContent className="max-w-[96vw] w-[96vw]">
+      <DialogContent className="max-w-[96vw] w-[96vw] sm:max-w-[96vw] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Import {config.label.toLowerCase()}</DialogTitle>
         </DialogHeader>
