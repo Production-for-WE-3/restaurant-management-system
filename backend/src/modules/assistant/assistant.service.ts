@@ -42,6 +42,55 @@ type AnalyticsPlan = {
   groupBy?: 'day' | 'type';
 };
 
+export function classifyAssistantIntent(
+  question: string,
+): DataIntent | 'conversation' {
+  const q = question.trim().toLowerCase();
+  if (!q) return 'conversation';
+
+  if (/^orders?$/.test(q)) return 'orderDetails';
+
+  const casualGreeting =
+    /^(hi|hello|hey|hii|hiii|hloo|yo|sup|bro|broo|namaste|good\s+(morning|afternoon|evening)|how\s+are\s+you|what\s*['’]s\s+up|whats\s+up|hey\s+there|hi\s+there)$/i;
+  if (casualGreeting.test(q) || q.length <= 5) return 'conversation';
+
+  if (
+    /inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(
+      q,
+    )
+  )
+    return 'inventory';
+  if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu';
+  if (/staff|employee|employees|team member/.test(q)) return 'staffSummary';
+  if (/payment|payments|cash|card|refund/.test(q)) return 'payments';
+  if (
+    /my\s+order|order.*(going|status|ready|progress|where|done|placed|made)|any\s+orders?|have\s+we\s+(done|made|placed)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(
+      q,
+    )
+  )
+    return 'orderDetails';
+  if (
+    /table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(
+      q,
+    )
+  )
+    return 'occupancy';
+  if (/complaint|issue|grievance|service request/.test(q))
+    return 'serviceIssues';
+  if (/cancel/.test(q)) return 'cancellations';
+  if (/booking|reservation/.test(q)) return 'bookings';
+  if (/customer|guest/.test(q)) return 'customers';
+  if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue';
+  if (
+    /summary|overview|overall|business\s+(status|health)|today|yesterday|last\s+(7|30)\s+days|this\s+(week|month)/.test(
+      q,
+    )
+  )
+    return 'overview';
+
+  return 'conversation';
+}
+
 @Injectable()
 export class AssistantService {
   constructor(
@@ -276,36 +325,8 @@ export class AssistantService {
       value: 'today' as const,
     };
   }
-  private intent(question: string): DataIntent {
-    const q = question.toLowerCase();
-    if (
-      /inventory|stock|ingredient|items?\s+(in|available)|available\s+items?/.test(
-        q,
-      )
-    )
-      return 'inventory';
-    if (/menu|food|dish|dishes|recipe/.test(q)) return 'menu';
-    if (/staff|employee|employees|team member/.test(q)) return 'staffSummary';
-    if (/payment|payments|cash|card|refund/.test(q)) return 'payments';
-    if (
-      /my\s+order|order.*(going|status|ready|progress|where|done|placed|made)|any\s+orders?|have\s+we\s+(done|made|placed)|order\s+(detail|details|list|number)|list\s+orders|individual\s+orders|show.*orders/.test(
-        q,
-      )
-    )
-      return 'orderDetails';
-    if (
-      /table|tables|occupancy|seating|occupied|available\s+tables?|vacant|free\s+tables?/.test(
-        q,
-      )
-    )
-      return 'occupancy';
-    if (/complaint|issue|grievance|service request/.test(q))
-      return 'serviceIssues';
-    if (/cancel/.test(q)) return 'cancellations';
-    if (/booking|reservation/.test(q)) return 'bookings';
-    if (/customer|guest/.test(q)) return 'customers';
-    if (/revenue|sales|earning|income|bikri/.test(q)) return 'revenue';
-    return 'overview';
+  private intent(question: string): DataIntent | 'conversation' {
+    return classifyAssistantIntent(question);
   }
   private async safeData(
     question: string,
@@ -321,7 +342,8 @@ export class AssistantService {
     // carries that member too. Fold it into 'overview' (the other
     // unhandled-by-name intent below) so `intent` is DataIntent throughout,
     // matching the behavior this already had by falling through unnamed.
-    const intent = selected.intent === 'conversation' ? 'overview' : selected.intent;
+    const intent =
+      selected.intent === 'conversation' ? 'overview' : selected.intent;
     const selectedPeriod =
       selected.period === period.value
         ? period
@@ -385,7 +407,10 @@ export class AssistantService {
         `SELECT name, item_type AS type, is_active AS "isActive" FROM foods WHERE is_active = true ORDER BY name LIMIT 200`,
       );
     } else if (intent === 'staffSummary') {
-      assertAssistantDataAccess(intent, ['employees', 'employee_outlet_assignments']);
+      assertAssistantDataAccess(intent, [
+        'employees',
+        'employee_outlet_assignments',
+      ]);
       metrics = await this.db.query(
         `SELECT employment_status AS status, COUNT(*)::int AS count FROM employees WHERE is_active = true${ids ? ' AND EXISTS (SELECT 1 FROM employee_outlet_assignments eoa WHERE eoa.employee_id = employees.id AND eoa.is_active = true AND eoa.outlet_id = ANY($1::bigint[]))' : ''} GROUP BY employment_status ORDER BY employment_status`,
         params,
@@ -398,10 +423,17 @@ export class AssistantService {
       );
     } else if (intent === 'orderDetails') {
       assertAssistantDataAccess(intent, ['orders', 'order_items', 'foods']);
-      metrics = await this.db.query(
-        `SELECT o.order_number AS "orderNumber", o.bill_number AS "billNumber", o.order_type AS "orderType", o.order_source AS "orderSource", o.status, o.payment_status AS "paymentStatus", o.grand_total AS "grandTotal", o.created_at AS "createdAt", COALESCE(items.items, '[]'::json) AS items FROM orders o LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', f.name, 'quantity', oi.quantity) ORDER BY f.name) AS items FROM order_items oi JOIN foods f ON f.id = oi.food_id WHERE oi.order_id = o.id) items ON true WHERE 1=1${dateFilter('o.created_at')}${ids ? ' AND o.outlet_id = ANY($1::bigint[])' : ''} ORDER BY o.created_at LIMIT 100`,
-        params,
-      );
+      metrics = /^orders?$/.test(q.trim())
+        ? (
+            await this.db.query(
+              `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total), 0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
+              params,
+            )
+          )[0]
+        : await this.db.query(
+            `SELECT o.order_number AS "orderNumber", o.bill_number AS "billNumber", o.order_type AS "orderType", o.order_source AS "orderSource", o.status, o.payment_status AS "paymentStatus", o.grand_total AS "grandTotal", o.created_at AS "createdAt", COALESCE(items.items, '[]'::json) AS items FROM orders o LEFT JOIN LATERAL (SELECT json_agg(json_build_object('name', f.name, 'quantity', oi.quantity) ORDER BY f.name) AS items FROM order_items oi JOIN foods f ON f.id = oi.food_id WHERE oi.order_id = o.id) items ON true WHERE 1=1${dateFilter('o.created_at')}${ids ? ' AND o.outlet_id = ANY($1::bigint[])' : ''} ORDER BY o.created_at LIMIT 100`,
+            params,
+          );
     } else if (intent === 'serviceIssues') {
       assertAssistantDataAccess(intent, ['service_requests']);
       metrics = await this.db.query(
@@ -449,12 +481,12 @@ export class AssistantService {
       metrics =
         groupBy === 'day'
           ? await this.db.query(
-              `SELECT DATE_TRUNC('day', created_at)::date AS day, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter} GROUP BY DATE_TRUNC('day', created_at) ORDER BY day`,
+              `SELECT DATE_TRUNC('day', created_at)::date AS day, COUNT(*)::int AS orders, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter} GROUP BY DATE_TRUNC('day', created_at) ORDER BY day`,
               params,
             )
           : (
               await this.db.query(
-                `SELECT COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
+                `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
                 params,
               )
             )[0];
@@ -488,13 +520,13 @@ export class AssistantService {
     // context, but never receives business rows unless the request maps to a
     // permitted data intent.
     const selectedIntent =
-      fallbackIntent !== 'overview'
+      fallbackIntent !== 'conversation' && fallbackIntent !== 'overview'
         ? fallbackIntent
         : plan?.intent && plan.intent !== 'conversation'
           ? plan.intent
-          : plan?.intent === 'conversation'
-            ? 'conversation'
-            : 'overview';
+          : 'conversation';
+    const safeIntent: DataIntent =
+      selectedIntent === 'conversation' ? 'overview' : selectedIntent;
     const effectivePlan = plan?.intent === selectedIntent ? plan : null;
     await this.assertIntentAccess(user, selectedIntent);
 
@@ -532,6 +564,19 @@ export class AssistantService {
             ),
           }
         : await this.safeData(question, ids, effectivePlan);
+
+    if (safeIntent !== 'overview' && data.intent === 'overview') {
+      const fix = { ...data, intent: safeIntent };
+      return {
+        route,
+        answer: await this.llm(question, {
+          responseMode: 'restaurant_data',
+          restaurantName: restaurant.name,
+          ...fix,
+        }),
+        ...(route === 'DATA' ? { data: fix } : {}),
+      };
+    }
 
     const llmContext = {
       responseMode: 'restaurant_data',
