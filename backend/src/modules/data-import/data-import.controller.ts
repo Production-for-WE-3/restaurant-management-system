@@ -44,7 +44,7 @@ export class DataImportController {
   }
 
   @Get('jobs/:id')
-  @ApiOperation({ summary: 'Detail for one import job (must belong to the requesting superadmin)' })
+  @ApiOperation({ summary: 'Detail for one import job (must belong to the requesting user)' })
   getJob(@Param('id') id: string, @Query('domain') domain: string, @CurrentUser() user: User) {
     return this.dataImportService.getJobDetail(domain, Number(id), user.id);
   }
