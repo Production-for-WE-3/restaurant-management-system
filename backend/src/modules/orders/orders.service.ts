@@ -1464,25 +1464,57 @@ export class OrdersService {
     }
 
     const quantity = dto.quantity ?? 1;
-    const item = this.orderItemsRepository.create({
-      orderId,
-      foodId: dto.foodId,
-      foodVariantId: dto.foodVariantId ?? null,
-      preparationDepartmentId,
-      quantity,
-      unitPrice,
-      totalAmount: round2(quantity * unitPrice),
-      note: dto.note ?? null,
-      packagingType: dto.packagingType ?? 'plating',
-    });
-    const saved = await this.orderItemsRepository.save(item);
+    const packagingType = dto.packagingType ?? 'plating';
+
+    // Re-adding the same food (same variant/note/packaging) while its prior
+    // row is still an editable, addon-free cart line is a quantity bump, not
+    // a new order line. This upserts on the DB's partial unique index
+    // idx_order_items_merge_key (order_id, food_id, variant, note,
+    // packaging WHERE status='stock_reserved' AND NOT is_held AND NOT
+    // has_addons) instead of a SELECT-then-insert, so two concurrent add
+    // requests for the same item can't both see "no existing row" and both
+    // insert — the constraint, not app logic, is what prevents the
+    // duplicate line. Rows already sent to the kitchen, held, or carrying
+    // addons fall outside that WHERE clause and always get a fresh row.
+    const upsert = await this.orderItemsRepository
+      .createQueryBuilder()
+      .insert()
+      .into(OrderItem)
+      .values({
+        orderId,
+        foodId: dto.foodId,
+        foodVariantId: dto.foodVariantId ?? null,
+        preparationDepartmentId,
+        quantity,
+        unitPrice,
+        totalAmount: round2(quantity * unitPrice),
+        note: dto.note ?? null,
+        packagingType,
+      })
+      .onConflict(
+        `(order_id, food_id, (COALESCE(food_variant_id, -1)), (COALESCE(note, '')), packaging_type) ` +
+          `WHERE status = 'stock_reserved' AND is_held = false AND has_addons = false ` +
+          `DO UPDATE SET quantity = order_items.quantity + EXCLUDED.quantity, ` +
+          `total_amount = round((order_items.quantity + EXCLUDED.quantity) * order_items.unit_price, 2)`,
+      )
+      .returning('id, (xmax = 0) AS inserted')
+      .execute();
+    const { id, inserted } = upsert.raw[0] as { id: number; inserted: boolean };
+    const saved = await this.findItem(id);
 
     if (!options.deferTotals) await this.recalculateTotals(orderId);
     try {
       await this.recalculateReservations(saved.id);
     } catch (error) {
-      // Roll back the item — its ingredient requirement couldn't be reserved.
-      await this.orderItemsRepository.remove(saved);
+      if (inserted) {
+        // Fresh row — its ingredient requirement couldn't be reserved.
+        await this.orderItemsRepository.remove(saved);
+      } else {
+        // Merged into an existing row — undo just the added quantity.
+        saved.quantity = round2(saved.quantity - quantity);
+        saved.totalAmount = round2(saved.quantity * saved.unitPrice);
+        await this.orderItemsRepository.save(saved);
+      }
       if (!options.deferTotals) await this.recalculateTotals(orderId);
       throw error;
     }
@@ -1672,12 +1704,26 @@ export class OrdersService {
         totalAmount: round2(quantity * addon.price),
       }),
     );
+    // Once an item carries an addon it must stop being a target for
+    // addItem()'s merge-on-add upsert (idx_order_items_merge_key excludes
+    // has_addons rows) — otherwise a later plain re-add of the same food
+    // would silently fold into this row and misattribute the addon to units
+    // that never got it.
+    const wasAddonFree = !item.hasAddons;
+    if (wasAddonFree) {
+      item.hasAddons = true;
+      await this.orderItemsRepository.save(item);
+    }
 
     await this.recalculateTotals(item.orderId);
     try {
       await this.recalculateReservations(orderItemId);
     } catch (error) {
       await this.orderItemAddonsRepository.remove(saved);
+      if (wasAddonFree) {
+        item.hasAddons = false;
+        await this.orderItemsRepository.save(item);
+      }
       await this.recalculateTotals(item.orderId);
       throw error;
     }
@@ -1690,6 +1736,13 @@ export class OrdersService {
     await this.operatingHoursService.assertOperational(order.outletId);
     OrdersService.assertMutable(order);
     await this.orderItemAddonsRepository.delete({ orderItemId, addonId });
+    const remainingAddons = await this.orderItemAddonsRepository.count({
+      where: { orderItemId },
+    });
+    if (remainingAddons === 0 && item.hasAddons) {
+      item.hasAddons = false;
+      await this.orderItemsRepository.save(item);
+    }
     await this.recalculateTotals(item.orderId);
     await this.recalculateReservations(orderItemId);
   }

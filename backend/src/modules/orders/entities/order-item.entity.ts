@@ -129,6 +129,16 @@ export class OrderItem {
   @Column({ name: 'is_held', type: 'boolean', default: false })
   isHeld: boolean;
 
+  /**
+   * Denormalized from order_item_addons, kept in sync by
+   * addItemAddon/removeItemAddon — backs idx_order_items_merge_key, the
+   * partial unique index addItem() upserts into. A plain index can't see
+   * into the addons child table, so this flag is what lets that constraint
+   * exclude addon-carrying rows from being merge targets.
+   */
+  @Column({ name: 'has_addons', type: 'boolean', default: false })
+  hasAddons: boolean;
+
   @Column({ type: 'text', nullable: true })
   note: string | null;
 

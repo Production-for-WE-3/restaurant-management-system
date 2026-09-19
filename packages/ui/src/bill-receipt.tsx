@@ -50,7 +50,7 @@ export function BillReceipt({ orderId }: { orderId: number }) {
         {(items?.data ?? []).length === 0 && (
           <p className="text-center text-xs text-muted-foreground">No items yet.</p>
         )}
-        {items?.data.map((item) => (
+        {groupBillItems(items?.data ?? []).map((item) => (
           <BillItemRow
             key={item.id}
             item={item}
@@ -94,6 +94,40 @@ export function BillReceipt({ orderId }: { orderId: number }) {
       <p className="text-center text-xs text-muted-foreground">{posSettings?.receiptFooter || "Thank you!"}</p>
     </div>
   )
+}
+
+/**
+ * Display-only safety net: combines rows that represent the same line (same
+ * food/variant/note/packaging, no addons attached) so a bill never prints
+ * "1 × ButterToast" three times for what is really one 3-unit order. Rows
+ * carrying addons are always kept separate — addons are attached per-row, so
+ * merging them would misattribute which unit got which addon.
+ */
+function groupBillItems(items: OrderItem[]): OrderItem[] {
+  const merged: OrderItem[] = []
+  const indexByKey = new Map<string, number>()
+
+  for (const item of items) {
+    if (item.addons.length > 0) {
+      merged.push(item)
+      continue
+    }
+    const key = [item.foodId, item.foodVariantId ?? "", item.note ?? "", item.packagingType].join("|")
+    const existingIndex = indexByKey.get(key)
+    if (existingIndex === undefined) {
+      indexByKey.set(key, merged.length)
+      merged.push(item)
+    } else {
+      const existing = merged[existingIndex]
+      merged[existingIndex] = {
+        ...existing,
+        quantity: existing.quantity + item.quantity,
+        totalAmount: existing.totalAmount + item.totalAmount,
+      }
+    }
+  }
+
+  return merged
 }
 
 function BillItemRow({ item, name }: { item: OrderItem; name: string }) {
