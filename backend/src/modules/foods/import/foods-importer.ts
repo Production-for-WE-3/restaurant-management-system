@@ -81,7 +81,7 @@ function slugify(name: string): string {
     .replace(/\.\.+/g, '.');
 }
 
-function firstImageUrl(raw: string): string {/dashboard/employees
+function firstImageUrl(raw: string): string {
   return raw.split(/[|,\s]+/)[0] ?? '';
 }
 
