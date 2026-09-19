@@ -467,12 +467,12 @@ export class AssistantService {
       metrics =
         groupBy === 'day'
           ? await this.db.query(
-              `SELECT DATE_TRUNC('day', created_at)::date AS day, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter} GROUP BY DATE_TRUNC('day', created_at) ORDER BY day`,
+              `SELECT DATE_TRUNC('day', created_at)::date AS day, COUNT(*)::int AS orders, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter} GROUP BY DATE_TRUNC('day', created_at) ORDER BY day`,
               params,
             )
           : (
               await this.db.query(
-                `SELECT COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
+                `SELECT COUNT(*)::int AS orders, COALESCE(SUM(grand_total),0)::numeric AS revenue FROM orders WHERE status <> 'cancelled'${dateFilter('created_at')}${outletFilter}`,
                 params,
               )
             )[0];
