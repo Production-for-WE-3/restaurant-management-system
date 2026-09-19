@@ -122,14 +122,29 @@ export class OrderItemsController {
   @RequirePermissions('orders.manage')
   @ApiOperation({
     summary:
-      'Updates an order item (foodId/foodVariantId/orderId/preparationDepartmentId are immutable; recalculates totals)',
+      'Updates an order item (foodId/foodVariantId/orderId/preparationDepartmentId are immutable; recalculates totals). ' +
+      'Once an item has left stock_reserved (sent to the kitchen), editing its quantity/note/packaging requires cashier ' +
+      '(order-payments.manage) or admin (orders.delete) tier — a waiter can still edit their own not-yet-sent cart lines.',
   })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateOrderItemDto,
     @CurrentUser() user: User,
   ) {
-    await this.assertItemAccess(id, user);
+    const item = await this.assertItemAccess(id, user);
+    const editsContent =
+      dto.quantity !== undefined || dto.note !== undefined || dto.packagingType !== undefined;
+    if (item.status !== 'stock_reserved' && editsContent) {
+      const [isCashier, isAdmin] = await Promise.all([
+        this.permissionsService.hasPermission(user.id, 'order-payments.manage'),
+        this.permissionsService.hasPermission(user.id, 'orders.delete'),
+      ]);
+      if (!isCashier && !isAdmin) {
+        throw new ForbiddenException(
+          'This item has already been sent to the kitchen — only a cashier or admin can edit it now',
+        );
+      }
+    }
     return this.ordersService.updateItem(id, dto);
   }
 

@@ -49,6 +49,18 @@ const ITEM_STATUS_LABELS: Record<string, string> = {
   cancelled: "Cancelled",
 }
 
+/** Buckets already-sent order items by food+variant+status, preserving each bucket's insertion order. */
+function groupSentItems(items: OrderItem[]): OrderItem[][] {
+  const groups = new Map<string, OrderItem[]>()
+  for (const item of items) {
+    const key = `${item.foodId}:${item.foodVariantId ?? 0}:${item.status}`
+    const bucket = groups.get(key)
+    if (bucket) bucket.push(item)
+    else groups.set(key, [item])
+  }
+  return [...groups.values()]
+}
+
 export function CartPanel({ orderId, basePath = "/operational/pos" }: { orderId: number; basePath?: string }) {
   // The receipt page and the tables board are their own top-level
   // staff-shell pages (see staff/nav-items.ts), not nested under basePath.
@@ -137,6 +149,11 @@ function EditableCart({
   // so a cashier-equivalent position with a different slug would otherwise
   // be denied the Pay UI despite holding the permission.
   const canRecordPayment = user.permissions.includes("order-payments.manage")
+  // Matches the backend gate in OrderItemsController#update — once an item
+  // is out of stock_reserved (sent to the kitchen) editing its
+  // quantity/note/packaging is cashier/admin-only; a waiter's view of it is
+  // read-only (see FoodStatusCountRow below).
+  const canEditSentItems = canRecordPayment || user.permissions.includes("orders.delete")
   const localCart = useLocalCartContext()
   const addItemsBatch = useAddOrderItemsBatch(orderId)
   const addItemsBatchOverride = useAddOrderItemsBatch(orderId, { closedHoursOverride: true })
@@ -212,6 +229,14 @@ function EditableCart({
   const variantName = (foodVariantId: number | null) =>
     foodVariantId ? (menu?.foodVariants.find((v) => v.id === foodVariantId)?.name ?? null) : null
   const serverPendingItems = items?.data.filter((item) => item.status === "stock_reserved") ?? []
+  const sentItems = items?.data.filter((item) => item.status !== "stock_reserved") ?? []
+  // Same food/variant repeated across separate "add" actions lands as
+  // separate order_item rows (each its own bill line) — group same
+  // food+variant+status lines into one combined row for display so a
+  // cashier/admin isn't shown "hukka x1" twice instead of "hukka x2" once.
+  // Only same-status lines are combined (never mixing a served unit with a
+  // still-preparing one in the same row).
+  const sentGroups = groupSentItems(sentItems)
   const serverPendingCount = serverPendingItems.filter((item) => !item.isHeld).length
   const heldCount = serverPendingItems.filter((item) => item.isHeld).length
   const pendingCount = serverPendingCount + localCart.items.length
@@ -306,7 +331,7 @@ function EditableCart({
         {isLoading && <ListSkeleton count={3} />}
         {!isLoading &&
           pendingCount === 0 &&
-          (statusCounts?.length ?? 0) === 0 && (
+          (canEditSentItems ? sentItems.length === 0 : (statusCounts?.length ?? 0) === 0) && (
             <p className="text-sm text-muted-foreground">No items yet — tap a food to add it.</p>
           )}
         {pendingCount > 0 && (
@@ -330,19 +355,42 @@ function EditableCart({
           </div>
         )}
         {/* Everything already sent to the kitchen, for this table's whole
-            visit — read-only, sourced from table_session_food_status_counts
-            (a rollup kept in sync by a DB trigger) rather than the raw
-            per-item list, since once an item is in the kitchen pipeline
-            staff act on it from the KDS/tickets, not from here. */}
-        {(statusCounts?.length ?? 0) > 0 && (
-          <div className="space-y-2">
-            {pendingCount > 0 && (
-              <h3 className="text-xs font-semibold text-muted-foreground uppercase">Placed order</h3>
+            visit. Immutable to a regular waiter — read-only, sourced from
+            table_session_food_status_counts (a rollup kept in sync by a DB
+            trigger) rather than the raw per-item list, since once an item is
+            in the kitchen pipeline staff act on it from the KDS/tickets, not
+            from here. A cashier/admin (matches the backend gate in
+            OrderItemsController#update) instead gets the editable per-item
+            rows, for correcting a mistake after the fact. */}
+        {canEditSentItems
+          ? sentItems.length > 0 && (
+              <div className="space-y-2">
+                {pendingCount > 0 && (
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase">
+                    Placed order ({sentItems.length})
+                  </h3>
+                )}
+                {sentGroups.map((group) => (
+                  <SentItemGroupRow
+                    key={`${group[0].foodId}:${group[0].foodVariantId ?? 0}:${group[0].status}`}
+                    orderId={orderId}
+                    items={group}
+                    foodName={foodName(group[0].foodId)}
+                    variantName={variantName(group[0].foodVariantId)}
+                    canCancelAfterServed={canRecordPayment}
+                  />
+                ))}
+              </div>
+            )
+          : (statusCounts?.length ?? 0) > 0 && (
+              <div className="space-y-2">
+                {pendingCount > 0 && (
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase">Placed order</h3>
+                )}
+                {statusCountsLoading && <ListSkeleton count={2} />}
+                {statusCounts?.map((row) => <FoodStatusCountRow key={row.foodId} row={row} />)}
+              </div>
             )}
-            {statusCountsLoading && <ListSkeleton count={2} />}
-            {statusCounts?.map((row) => <FoodStatusCountRow key={row.foodId} row={row} />)}
-          </div>
-        )}
       </div>
       {heldCount > 0 && (
         <>
@@ -662,6 +710,123 @@ function CartItemRow({
               </button>
             </div>
           )}
+
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            onBlur={handleNoteBlur}
+            placeholder="Special instructions..."
+            className="text-xs"
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Combined view of every same-food/variant/status order_item line — cashier/
+ * admin's editable counterpart to FoodStatusCountRow's read-only rollup.
+ * Quantity/note/remove act on the most-recently-added line in the group
+ * (same "operate on the last match" rule the guest-web cart already uses for
+ * a repeated food), same as if the waiter had tapped it directly; the other
+ * lines in the group are left untouched.
+ */
+function SentItemGroupRow({
+  orderId,
+  items,
+  foodName,
+  variantName,
+  canCancelAfterServed,
+}: {
+  orderId: number
+  items: OrderItem[]
+  foodName: string
+  variantName: string | null
+  canCancelAfterServed: boolean
+}) {
+  const target = items[items.length - 1]
+  const combinedQuantity = items.reduce((sum, item) => sum + item.quantity, 0)
+  const combinedTotal = items.reduce((sum, item) => sum + item.totalAmount, 0)
+
+  const updateItem = useUpdateOrderItem(orderId, target.id)
+  const removeItem = useRemoveOrderItem(orderId)
+  const [note, setNote] = useState(target.note ?? "")
+
+  async function handleQuantity(delta: number) {
+    const quantity = Math.max(1, target.quantity + delta)
+    try {
+      await updateItem.mutateAsync({ quantity })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update quantity")
+    }
+  }
+
+  async function handleNoteBlur() {
+    if (note === (target.note ?? "")) return
+    try {
+      await updateItem.mutateAsync({ note })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save note")
+    }
+  }
+
+  async function handleRemove() {
+    try {
+      await removeItem.mutateAsync(target.id)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to remove item")
+    }
+  }
+
+  const isServed = target.status === "served"
+
+  return (
+    <div className="space-y-2 rounded-lg border border-input p-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-medium">
+              {foodName}
+              {variantName ? ` — ${variantName}` : ""}
+            </p>
+            <Badge variant="secondary" className="text-xs">
+              {ITEM_STATUS_LABELS[target.status] ?? target.status}
+            </Badge>
+            {items.length > 1 && (
+              <Badge variant="outline" className="text-xs" title={`${items.length} separate lines combined`}>
+                {items.length} lines
+              </Badge>
+            )}
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {target.unitPrice} each &middot; total {combinedTotal}
+          </p>
+        </div>
+        {(!isServed || canCancelAfterServed) && (
+          <Button variant="ghost" size="icon-sm" onClick={handleRemove} aria-label="Remove item">
+            <XIcon />
+          </Button>
+        )}
+      </div>
+
+      {isServed ? (
+        target.note && (
+          <p className="text-xs text-muted-foreground">
+            Qty {combinedQuantity} &middot; {target.note}
+          </p>
+        )
+      ) : (
+        <>
+          <div className="flex items-center gap-1.5">
+            <Button variant="outline" size="icon-xs" onClick={() => handleQuantity(-1)} aria-label="Decrease quantity">
+              <MinusIcon />
+            </Button>
+            <span className="w-6 text-center text-sm">{combinedQuantity}</span>
+            <Button variant="outline" size="icon-xs" onClick={() => handleQuantity(1)} aria-label="Increase quantity">
+              <PlusIcon />
+            </Button>
+          </div>
 
           <Input
             value={note}
