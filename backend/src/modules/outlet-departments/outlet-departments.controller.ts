@@ -46,7 +46,7 @@ export class OutletDepartmentsController {
    * no `outlet-departments.view` permission required, since seeing your own
    * station is an assignment fact, not a permission grant. Narrows to the
    * user's assigned department(s) at that outlet when they have any; returns
-   * every department at the outlet for superadmins and globally-scoped users.
+   * every department at the outlet for globally-scoped users.
    * Declared before `:id` so "assigned" isn't parsed as an id.
    */
   @Get('assigned')
@@ -58,30 +58,30 @@ export class OutletDepartmentsController {
     @Query('outletId', ParseIntPipe) outletId: number,
     @CurrentUser() user: User,
   ) {
-    if (!user.isSuperadmin) {
-      const outletIds = await this.permissionsService.getAccessibleOutletIds(
-        user.id,
-      );
-      // null: no active role assignment at all -> no outlet access.
-      if (outletIds === null) {
-        throw new ForbiddenException('Not assigned to this outlet');
-      }
-      if (outletIds.length > 0 && !outletIds.includes(outletId)) {
-        throw new ForbiddenException('Not assigned to this outlet');
-      }
+    const outletIds = await this.permissionsService.getAccessibleOutletIds(
+      user.id,
+    );
+    // null: no active role assignment at all -> no outlet access.
+    if (outletIds === null) {
+      throw new ForbiddenException('Not assigned to this outlet');
+    }
+    if (outletIds.length > 0 && !outletIds.includes(outletId)) {
+      throw new ForbiddenException('Not assigned to this outlet');
     }
 
     const departments =
       await this.outletDepartmentsService.findByOutlet(outletId);
 
-    if (user.isSuperadmin) return departments;
-
     // Kitchen staff see only the departments explicitly assigned to their
     // employee record. Waiters, cashiers, and other non-kitchen staff need to
     // see every department in the outlet for ordering and service workflows.
-    if (!(await this.permissionsService.isKitchenStaff(user.id))) return departments;
-    const departmentIds = await this.permissionsService.getEmployeeDepartmentIds(user.id, outletId);
-    return departments.filter((department) => departmentIds.includes(department.id));
+    if (!(await this.permissionsService.isKitchenStaff(user.id)))
+      return departments;
+    const departmentIds =
+      await this.permissionsService.getEmployeeDepartmentIds(user.id, outletId);
+    return departments.filter((department) =>
+      departmentIds.includes(department.id),
+    );
   }
 
   @Get(':id')

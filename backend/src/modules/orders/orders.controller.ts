@@ -67,11 +67,7 @@ export class OrdersController {
    */
   private async assertOrderAccess(orderId: number, user: User) {
     const order = await this.ordersService.findOne(orderId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      order.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, order.outletId);
     return order;
   }
 
@@ -130,16 +126,16 @@ export class OrdersController {
     // by guessing/enumerating order ids.
     requireVerifiedCustomerId(customer, 'to order');
     const table = await this.diningTablesService.findByCode(tableCode);
-    const session = await this.tableSessionsService.findLatestForTable(table.id);
+    const session = await this.tableSessionsService.findLatestForTable(
+      table.id,
+    );
     if (!session) {
       throw new NotFoundException(`No active session for table ${tableCode}`);
     }
 
     const order = await this.ordersService.findOne(id);
     if (order.tableSessionId !== session.id) {
-      throw new ForbiddenException(
-        'This order does not belong to your table',
-      );
+      throw new ForbiddenException('This order does not belong to your table');
     }
     if (!GUEST_CANCELLABLE_STATUSES.includes(order.status)) {
       throw new ConflictException(
@@ -165,7 +161,9 @@ export class OrdersController {
     // Scoped to this table's latest session, not just the outlet — a phone
     // number's orders from a previous, unrelated visit must never surface
     // (or be cancellable) from today's table session. See findMineForCustomer.
-    const session = await this.tableSessionsService.findLatestForTable(table.id);
+    const session = await this.tableSessionsService.findLatestForTable(
+      table.id,
+    );
     if (!session) return [];
     return this.ordersService.findMineForCustomer(session.id);
   }
@@ -177,20 +175,10 @@ export class OrdersController {
     summary:
       'Lists orders (paginated, optional search on orderNumber + outletId/status filters)',
   })
-  async findAll(
-    @Query() query: ListOrdersQueryDto,
-    @CurrentUser() user: User,
-  ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+  async findAll(@Query() query: ListOrdersQueryDto, @CurrentUser() user: User) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.ordersService.findAll(query, accessible);
   }
@@ -199,14 +187,19 @@ export class OrdersController {
   @RequirePermissions('orders.view')
   @ExposeResponseFields('createdAt', 'updatedAt')
   @ApiOperation({ summary: 'Gets an order' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertOrderAccess(id, user);
   }
 
   @Get(':id/status-history')
   @RequirePermissions('orders.view')
   @ExposeResponseFields('createdAt')
-  @ApiOperation({ summary: "Every recorded status transition for an order, oldest first" })
+  @ApiOperation({
+    summary: 'Every recorded status transition for an order, oldest first',
+  })
   async listStatusHistory(
     @Param('id', ParseIntPipe) id: number,
     @CurrentUser() user: User,
@@ -221,11 +214,7 @@ export class OrdersController {
     summary: 'Creates an order (source/orderSource are hardcoded to staff/pos)',
   })
   async create(@Body() dto: CreateOrderDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.ordersService.create(dto, user.id);
   }
 
@@ -246,9 +235,11 @@ export class OrdersController {
     // is not enough to change it. Only gate the request when it actually
     // tries to change the discount, so plain note edits stay unaffected.
     const changesDiscount =
-      (dto.discountType !== undefined && dto.discountType !== order.discountType) ||
-      (dto.discountValue !== undefined && dto.discountValue !== order.discountValue);
-    if (changesDiscount && !user.isSuperadmin) {
+      (dto.discountType !== undefined &&
+        dto.discountType !== order.discountType) ||
+      (dto.discountValue !== undefined &&
+        dto.discountValue !== order.discountValue);
+    if (changesDiscount) {
       const allowed = await this.permissionsService.hasPermission(
         user.id,
         'orders.discount',
@@ -279,7 +270,7 @@ export class OrdersController {
     // the same manager-tier gate rather than riding on orders.manage alone
     // (held by every waiter/cashier/bartender). See OrdersController#update
     // for the identical pattern on discounts.
-    if (dto.status === 'cancelled' && !user.isSuperadmin) {
+    if (dto.status === 'cancelled') {
       const allowed = await this.permissionsService.hasPermission(
         user.id,
         'orders.delete',
@@ -304,11 +295,7 @@ export class OrdersController {
     @CurrentUser() user: User,
   ) {
     const session = await this.tableSessionsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      session.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, session.outletId);
     return this.ordersService.completeAllForTableSession(id, user.id);
   }
 
@@ -352,7 +339,10 @@ export class OrdersController {
     @CurrentUser() user: User,
   ) {
     await this.assertOrderAccess(id, user);
-    return this.kitchenTicketsService.markOrderReadyItemServed(id, ticketItemId);
+    return this.kitchenTicketsService.markOrderReadyItemServed(
+      id,
+      ticketItemId,
+    );
   }
 
   @Post(':id/fire-held-items')
@@ -371,7 +361,9 @@ export class OrdersController {
 
   @Post(':id/loyalty/redeem')
   @RequirePermissions('orders.manage')
-  @ApiOperation({ summary: 'Redeems loyalty points against an order (recalculates totals)' })
+  @ApiOperation({
+    summary: 'Redeems loyalty points against an order (recalculates totals)',
+  })
   async redeemLoyaltyPoints(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: RedeemLoyaltyPointsDto,
@@ -414,11 +406,14 @@ export class OrdersController {
   @Post(':id/invoice')
   @RequirePermissions('orders.manage')
   @ApiOperation({
-    summary: 'Generate an invoice for this order on-demand. Returns the order with invoiceNumber set.',
+    summary:
+      'Generate an invoice for this order on-demand. Returns the order with invoiceNumber set.',
   })
-  async issueInvoice(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async issueInvoice(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertOrderAccess(id, user);
     return this.ordersService.issueInvoice(id);
   }
-
 }

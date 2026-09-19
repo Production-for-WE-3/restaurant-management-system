@@ -185,11 +185,10 @@ describe('Employees — global role sync (e2e)', () => {
     expect(assignment!.scopeType).toBe('global');
     expect(assignment!.outletId).toBeNull();
 
-    const accessible = await outletAccess.getAccessibleOutletIds(
-      user.id,
-      false,
+    const accessible = await outletAccess.getAccessibleOutletIds(user.id);
+    expect(accessible).toEqual(
+      expect.arrayContaining([outletA.id, outletB.id]),
     );
-    expect(accessible).toEqual(expect.arrayContaining([outletA.id, outletB.id]));
     expect(accessible).not.toBe(ALL_OUTLETS);
   });
 
@@ -246,10 +245,7 @@ describe('Employees — global role sync (e2e)', () => {
       }),
     );
 
-    const accessible = await outletAccess.getAccessibleOutletIds(
-      user.id,
-      false,
-    );
+    const accessible = await outletAccess.getAccessibleOutletIds(user.id);
     // This is the bug's footprint on unrepaired data: a stale outlet-scoped
     // row for a global role still narrows access instead of granting ALL.
     expect(accessible).not.toBe(ALL_OUTLETS);

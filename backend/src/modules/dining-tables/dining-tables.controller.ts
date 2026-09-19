@@ -70,22 +70,15 @@ export class DiningTablesController {
   ) {
     const start = Date.now();
 
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     const result = await this.diningTablesService.findAll(query, accessible);
 
     const duration = Date.now() - start;
     this.logger.log(
-      `[PERF:dining-tables/findAll] outletId=${query.outletId} total=${duration}ms`
+      `[PERF:dining-tables/findAll] outletId=${query.outletId} total=${duration}ms`,
     );
 
     return result;
@@ -94,13 +87,12 @@ export class DiningTablesController {
   @Get(':id')
   @RequirePermissions('dining-tables.view')
   @ApiOperation({ summary: 'Gets a dining table' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const table = await this.diningTablesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      table.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, table.outletId);
     return this.diningTablesService.toResponse(table);
   }
 
@@ -108,11 +100,7 @@ export class DiningTablesController {
   @RequirePermissions('dining-tables.manage')
   @ApiOperation({ summary: 'Creates a dining table' })
   async create(@Body() dto: CreateDiningTableDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     const table = await this.diningTablesService.create(dto);
     return this.diningTablesService.toResponse(table);
   }
@@ -128,11 +116,7 @@ export class DiningTablesController {
     @CurrentUser() user: User,
   ) {
     const table = await this.diningTablesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      table.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, table.outletId);
     const updated = await this.diningTablesService.update(id, dto);
     return this.diningTablesService.toResponse(updated);
   }
@@ -141,13 +125,12 @@ export class DiningTablesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('dining-tables.manage')
   @ApiOperation({ summary: 'Deletes a dining table (no soft delete)' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const table = await this.diningTablesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      table.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, table.outletId);
     return this.diningTablesService.remove(id);
   }
 }

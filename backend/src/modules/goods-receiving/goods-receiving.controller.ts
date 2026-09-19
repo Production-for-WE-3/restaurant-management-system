@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -20,43 +30,66 @@ export class GoodsReceivingController {
   /** Resolves the GRN and asserts outlet access — same choke-point pattern as OrdersController#assertOrderAccess. */
   private async assertGrnAccess(id: number, user: User) {
     const grn = await this.grnService.findOne(id);
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, grn.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, grn.outletId);
     return grn;
   }
 
-  @Get() @RequirePermissions('goods-receiving.view')
+  @Get()
+  @RequirePermissions('goods-receiving.view')
   @ApiOperation({ summary: 'Lists goods receiving (paginated, filterable)' })
-  async findAll(@Query() query: ListGoodsReceivingQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListGoodsReceivingQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, query.outletId);
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.grnService.findAll(query, accessible);
   }
 
-  @Get(':id') @RequirePermissions('goods-receiving.view')
+  @Get(':id')
+  @RequirePermissions('goods-receiving.view')
   @ApiOperation({ summary: 'Gets a goods receiving record' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertGrnAccess(id, user);
   }
 
-  @Post() @RequirePermissions('goods-receiving.manage')
-  @ApiOperation({ summary: 'Creates a goods receiving (updates inventory, PO status)' })
-  async create(@Body() dto: CreateGoodsReceivingDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, dto.outletId);
+  @Post()
+  @RequirePermissions('goods-receiving.manage')
+  @ApiOperation({
+    summary: 'Creates a goods receiving (updates inventory, PO status)',
+  })
+  async create(
+    @Body() dto: CreateGoodsReceivingDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.grnService.create(dto, user.id);
   }
 
-  @Post(':id/cancel') @HttpCode(HttpStatus.OK) @RequirePermissions('goods-receiving.manage')
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('goods-receiving.manage')
   @ApiOperation({ summary: 'Cancels a draft goods receiving' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertGrnAccess(id, user);
     return this.grnService.cancel(id);
   }
 
-  @Get(':id/items') @RequirePermissions('goods-receiving.view')
+  @Get(':id/items')
+  @RequirePermissions('goods-receiving.view')
   @ApiOperation({ summary: "Lists a goods receiving's items" })
-  async listItems(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listItems(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertGrnAccess(id, user);
     return this.grnService.listItems(id);
   }

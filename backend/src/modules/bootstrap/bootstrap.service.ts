@@ -120,7 +120,7 @@ export class BootstrapService {
 
   /**
    * outletId has already been validated against the caller's outlet
-   * assignments (or superadmin) by BootstrapController before this runs —
+   * assignments by BootstrapController before this runs —
    * see OutletAccessService.assertOutletAccess. Departments/tables are
    * fetched scoped to that outletId at the query level; food categories and
    * addons have no outlet dimension anywhere in the schema (global catalog),
@@ -155,7 +155,7 @@ export class BootstrapService {
 
   /**
    * outletId (when provided) has already been validated against the
-   * caller's outlet assignments (or superadmin) by BootstrapController —
+   * caller's outlet assignments by BootstrapController —
    * see OutletAccessService.assertOutletAccess.
    */
   async getReservationsBootstrap(
@@ -185,10 +185,7 @@ export class BootstrapService {
   ): Promise<InventoryBootstrapResponse> {
     const scope = outletId !== undefined ? [outletId] : accessibleOutletIds;
     const [ingredients, units, categories, warehouses] = await Promise.all([
-      this.ingredientsService.findAll(
-        { page: 1, limit: 100, outletId },
-        scope,
-      ),
+      this.ingredientsService.findAll({ page: 1, limit: 100, outletId }, scope),
       this.unitsService.findAll({ page: 1, limit: 100 }),
       this.ingredientCategoriesService.findAll({ page: 1, limit: 100 }),
       this.warehousesService.findAll({ page: 1, limit: 100, outletId }, scope),

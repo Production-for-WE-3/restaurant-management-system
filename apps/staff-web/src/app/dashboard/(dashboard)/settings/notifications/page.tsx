@@ -181,7 +181,7 @@ export default function NotificationSettingsPage() {
                       <FormItem className="col-span-2">
                         <FormLabel>Cash payment notifications go to</FormLabel>
                         <p className="text-xs text-muted-foreground">
-                          Superadmins always receive these; pick which additional positions should too.
+                          Pick which additional positions should receive these.
                         </p>
                         <div className="flex flex-wrap gap-3 pt-1">
                           {positions

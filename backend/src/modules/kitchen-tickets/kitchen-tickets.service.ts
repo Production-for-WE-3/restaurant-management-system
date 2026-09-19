@@ -131,7 +131,9 @@ export class KitchenTicketsService {
 
   async listItems(ticketId: number): Promise<KitchenTicketItemResponseDto[]> {
     await this.findOne(ticketId);
-    const items = await this.ticketItemsRepository.find({ where: { ticketId } });
+    const items = await this.ticketItemsRepository.find({
+      where: { ticketId },
+    });
     return items.map((item) => this.toItemResponse(item));
   }
 
@@ -141,9 +143,12 @@ export class KitchenTicketsService {
     user: User,
   ): Promise<KdsBootstrapResponseDto> {
     const restrictToAssignedDepartments =
-      !user.isSuperadmin && (await this.permissionsService.isKitchenStaff(user.id));
+      await this.permissionsService.isKitchenStaff(user.id);
     const assignedDepartmentIds = restrictToAssignedDepartments
-      ? await this.permissionsService.getEmployeeDepartmentIds(user.id, outletId)
+      ? await this.permissionsService.getEmployeeDepartmentIds(
+          user.id,
+          outletId,
+        )
       : null;
 
     // Kitchen staff must be isolated at the API boundary. The frontend also
@@ -214,10 +219,9 @@ export class KitchenTicketsService {
     if (status === 'served') item.servedAt = now;
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(item);
-      await manager.getRepository(OrderItem).update(
-        { id: item.orderItemId },
-        { status },
-      );
+      await manager
+        .getRepository(OrderItem)
+        .update({ id: item.orderItemId }, { status });
     });
 
     const updatedTicket = await this.recomputeTicketStatus(ticket.id);
@@ -268,10 +272,12 @@ export class KitchenTicketsService {
     if (cancellable.length > 0) {
       await this.dataSource.transaction(async (manager) => {
         await manager.getRepository(KitchenTicketItem).save(cancellable);
-        await manager.getRepository(OrderItem).update(
-          { id: In(cancellable.map((item) => item.orderItemId)) },
-          { status: 'cancelled' },
-        );
+        await manager
+          .getRepository(OrderItem)
+          .update(
+            { id: In(cancellable.map((item) => item.orderItemId)) },
+            { status: 'cancelled' },
+          );
       });
     }
 
@@ -348,10 +354,12 @@ export class KitchenTicketsService {
     }
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(eligible);
-      await manager.getRepository(OrderItem).update(
-        { id: In(eligible.map((item) => item.orderItemId)) },
-        { status: toStatus },
-      );
+      await manager
+        .getRepository(OrderItem)
+        .update(
+          { id: In(eligible.map((item) => item.orderItemId)) },
+          { status: toStatus },
+        );
     });
 
     const updatedTicket = await this.recomputeTicketStatus(ticketId);
@@ -397,10 +405,9 @@ export class KitchenTicketsService {
     ticket.recallCount += 1;
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(item);
-      await manager.getRepository(OrderItem).update(
-        { id: item.orderItemId },
-        { status: 'preparing' },
-      );
+      await manager
+        .getRepository(OrderItem)
+        .update({ id: item.orderItemId }, { status: 'preparing' });
       await manager.getRepository(KitchenTicket).save(ticket);
     });
 
@@ -486,10 +493,12 @@ export class KitchenTicketsService {
     }
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(eligible);
-      await manager.getRepository(OrderItem).update(
-        { id: In(eligible.map((item) => item.orderItemId)) },
-        { status: 'served' },
-      );
+      await manager
+        .getRepository(OrderItem)
+        .update(
+          { id: In(eligible.map((item) => item.orderItemId)) },
+          { status: 'served' },
+        );
     });
 
     const ticketIds = [...new Set(eligible.map((item) => item.ticketId))];
@@ -534,10 +543,9 @@ export class KitchenTicketsService {
     item.servedAt = now;
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(item);
-      await manager.getRepository(OrderItem).update(
-        { id: item.orderItemId },
-        { status: 'served' },
-      );
+      await manager
+        .getRepository(OrderItem)
+        .update({ id: item.orderItemId }, { status: 'served' });
     });
 
     const ticket = await this.recomputeTicketStatus(item.ticketId);
@@ -552,10 +560,7 @@ export class KitchenTicketsService {
    * and the waiter service queue pick it up without polling.
    */
   /** Public so OrdersService can push the same "items ready" waiter alert for ready-made items that skip the kitchen entirely (see sendItemsToKitchen). */
-  async notifyItemsReady(
-    ticketId: number,
-    itemIds: number[],
-  ): Promise<void> {
+  async notifyItemsReady(ticketId: number, itemIds: number[]): Promise<void> {
     const ticket = await this.ticketsRepository.findOne({
       where: { id: ticketId },
       relations: [
@@ -687,9 +692,9 @@ export class KitchenTicketsService {
       items: ticket.items?.map((item) => this.toItemResponse(item)),
       order: ticket.order
         ? {
-          id: ticket.order.id,
-          orderNumber: ticket.order.orderNumber,
-          createdAt: ticket.order.createdAt,
+            id: ticket.order.id,
+            orderNumber: ticket.order.orderNumber,
+            createdAt: ticket.order.createdAt,
             tableSession: ticket.order.tableSession
               ? {
                   id: ticket.order.tableSession.id,
@@ -730,7 +735,10 @@ export class KitchenTicketsService {
               ? { id: item.orderItem.food.id, name: item.orderItem.food.name }
               : undefined,
             foodVariant: item.orderItem.foodVariant
-              ? { id: item.orderItem.foodVariant.id, name: item.orderItem.foodVariant.name }
+              ? {
+                  id: item.orderItem.foodVariant.id,
+                  name: item.orderItem.foodVariant.name,
+                }
               : item.orderItem.foodVariant,
           }
         : undefined,

@@ -40,12 +40,10 @@ export class StockOutsController {
     user: User,
   ): Promise<IngredientStockOut> {
     const stockOut = await this.stockOutsService.findOne(id);
-    const warehouse = await this.warehousesService.findOne(stockOut.warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
+    const warehouse = await this.warehousesService.findOne(
+      stockOut.warehouseId,
     );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return stockOut;
   }
 
@@ -54,11 +52,7 @@ export class StockOutsController {
     user: User,
   ): Promise<void> {
     const warehouse = await this.warehousesService.findOne(warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
   }
 
   @Get()
@@ -67,21 +61,29 @@ export class StockOutsController {
     summary:
       'Lists stock-outs (paginated, filter by warehouseId/status/search)',
   })
-  async findAll(@Query() query: ListStockOutsQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListStockOutsQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.warehouseId !== undefined) {
       await this.assertWarehouseAccess(query.warehouseId, user);
       return this.stockOutsService.findAll(query);
     }
     const accessibleWarehouseIds =
-      accessible === 'ALL' ? 'ALL' : await this.warehousesService.findIdsForOutlets(accessible);
+      accessible === 'ALL'
+        ? 'ALL'
+        : await this.warehousesService.findIdsForOutlets(accessible);
     return this.stockOutsService.findAll(query, accessibleWarehouseIds);
   }
 
   @Get(':id')
   @RequirePermissions('stock-outs.view')
   @ApiOperation({ summary: 'Gets a stock-out' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertAccess(id, user);
   }
 
@@ -111,7 +113,10 @@ export class StockOutsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('stock-outs.manage')
   @ApiOperation({ summary: 'Deletes a draft stock-out' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockOutsService.remove(id);
   }
@@ -119,7 +124,10 @@ export class StockOutsController {
   @Get(':id/items')
   @RequirePermissions('stock-outs.view')
   @ApiOperation({ summary: "Lists a stock-out's items" })
-  async listItems(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listItems(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockOutsService.listItems(id);
   }
@@ -168,7 +176,10 @@ export class StockOutsController {
     summary:
       'Approves a draft stock-out: posts a production_consume ledger entry per item (priced at the current weighted-average cost) and updates warehouse stock',
   })
-  async approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async approve(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockOutsService.approve(id, user.id);
   }
@@ -176,7 +187,10 @@ export class StockOutsController {
   @Post(':id/cancel')
   @RequirePermissions('stock-outs.manage')
   @ApiOperation({ summary: 'Cancels a draft stock-out (no ledger effect)' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockOutsService.cancel(id);
   }

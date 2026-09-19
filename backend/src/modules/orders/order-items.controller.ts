@@ -41,11 +41,7 @@ export class OrderItemsController {
   private async assertItemAccess(itemId: number, user: User) {
     const item = await this.ordersService.findItem(itemId);
     const order = await this.ordersService.findOne(item.orderId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      order.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, order.outletId);
     return item;
   }
 
@@ -58,11 +54,7 @@ export class OrderItemsController {
    */
   private async assertOrderAccess(orderId: number, user: User) {
     const order = await this.ordersService.findOne(orderId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      order.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, order.outletId);
     return order;
   }
 
@@ -71,7 +63,7 @@ export class OrderItemsController {
   @ExposeResponseFields('createdAt', 'updatedAt')
   @ApiOperation({
     summary:
-      'Lists an order\'s items (paginated) — minimal, waiter-facing shape with food/variant names embedded so callers never need a follow-up request just to render a row.',
+      "Lists an order's items (paginated) — minimal, waiter-facing shape with food/variant names embedded so callers never need a follow-up request just to render a row.",
   })
   async findAll(
     @Query() query: ListOrderItemsQueryDto,
@@ -84,7 +76,10 @@ export class OrderItemsController {
   @Get(':id')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Gets an order item' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertItemAccess(id, user);
   }
 
@@ -110,21 +105,22 @@ export class OrderItemsController {
     summary:
       "Removes an order item — only while it's still 'stock_reserved' (not yet sent to the kitchen). Once fired, use POST :id/void instead.",
   })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertItemAccess(id, user);
     // Hard-deleting a line item is destructive and unaudited compared to
     // void (which keeps the record and requires a reason) — same
     // manager-tier gate as cancelling an order. See OrdersController#updateStatus.
-    if (!user.isSuperadmin) {
-      const allowed = await this.permissionsService.hasPermission(
-        user.id,
-        'orders.delete',
+    const allowed = await this.permissionsService.hasPermission(
+      user.id,
+      'orders.delete',
+    );
+    if (!allowed) {
+      throw new ForbiddenException(
+        'Deleting an order item requires the orders.delete permission',
       );
-      if (!allowed) {
-        throw new ForbiddenException(
-          'Deleting an order item requires the orders.delete permission',
-        );
-      }
     }
     return this.ordersService.removeItem(id);
   }
@@ -147,7 +143,10 @@ export class OrderItemsController {
   @Get(':id/addons')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Lists addons on an order item' })
-  async listAddons(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listAddons(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertItemAccess(id, user);
     return this.ordersService.listItemAddons(id);
   }
@@ -185,7 +184,10 @@ export class OrderItemsController {
     summary:
       "Lists an order item's ingredient reservations (reserved/consumed/released) — read-only, a side effect of item/addon add-remove and order completion/cancellation",
   })
-  async listReservations(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listReservations(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertItemAccess(id, user);
     return this.ordersService.listItemReservations(id);
   }

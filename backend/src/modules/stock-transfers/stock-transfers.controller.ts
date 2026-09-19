@@ -40,11 +40,7 @@ export class StockTransfersController {
     user: User,
   ): Promise<void> {
     const warehouse = await this.warehousesService.findOne(warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
   }
 
   /**
@@ -69,26 +65,37 @@ export class StockTransfersController {
     summary:
       'Lists stock transfers (paginated, filter by fromWarehouseId/toWarehouseId/status/search)',
   })
-  async findAll(@Query() query: ListStockTransfersQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListStockTransfersQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.fromWarehouseId !== undefined) {
       await this.assertWarehouseAccess(query.fromWarehouseId, user);
     }
     if (query.toWarehouseId !== undefined) {
       await this.assertWarehouseAccess(query.toWarehouseId, user);
     }
-    if (query.fromWarehouseId !== undefined && query.toWarehouseId !== undefined) {
+    if (
+      query.fromWarehouseId !== undefined &&
+      query.toWarehouseId !== undefined
+    ) {
       return this.stockTransfersService.findAll(query);
     }
     const accessibleWarehouseIds =
-      accessible === 'ALL' ? 'ALL' : await this.warehousesService.findIdsForOutlets(accessible);
+      accessible === 'ALL'
+        ? 'ALL'
+        : await this.warehousesService.findIdsForOutlets(accessible);
     return this.stockTransfersService.findAll(query, accessibleWarehouseIds);
   }
 
   @Get(':id')
   @RequirePermissions('stock-transfers.view')
   @ApiOperation({ summary: 'Gets a stock transfer' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertAccess(id, user);
   }
 
@@ -120,7 +127,10 @@ export class StockTransfersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('stock-transfers.manage')
   @ApiOperation({ summary: 'Deletes a draft stock transfer' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockTransfersService.remove(id);
   }
@@ -128,7 +138,10 @@ export class StockTransfersController {
   @Get(':id/items')
   @RequirePermissions('stock-transfers.view')
   @ApiOperation({ summary: "Lists a stock transfer's items" })
-  async listItems(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listItems(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockTransfersService.listItems(id);
   }
@@ -177,7 +190,10 @@ export class StockTransfersController {
     summary:
       'Approves a draft transfer: posts transfer_out at the source and transfer_in at the destination atomically, per item',
   })
-  async approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async approve(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockTransfersService.approve(id, user.id);
   }
@@ -187,7 +203,10 @@ export class StockTransfersController {
   @ApiOperation({
     summary: 'Cancels a draft stock transfer (no ledger effect)',
   })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockTransfersService.cancel(id);
   }

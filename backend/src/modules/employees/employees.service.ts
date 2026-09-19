@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FindOptionsWhere, ILike, In, IsNull, Repository } from 'typeorm';
 import { PaginatedResponse } from '../../common/dto/paginated-response.interface';
@@ -12,8 +16,14 @@ import { Employee } from './entities/employee.entity';
 import { EmployeeDepartmentAssignment } from './entities/employee-department-assignment.entity';
 import { EmployeeOutletAssignment } from './entities/employee-outlet-assignment.entity';
 import { ListEmployeesQueryDto } from './dto/list-employees-query.dto';
-import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/create-employee.dto';
-import { CreatePositionDto, UpdatePositionDto } from './dto/create-position.dto';
+import {
+  CreateEmployeeDto,
+  UpdateEmployeeDto,
+} from './dto/create-employee.dto';
+import {
+  CreatePositionDto,
+  UpdatePositionDto,
+} from './dto/create-position.dto';
 import {
   EmployeeResponseDto,
   PositionResponseDto,
@@ -22,10 +32,14 @@ import {
 @Injectable()
 export class EmployeesService {
   constructor(
-    @InjectRepository(Employee) private readonly employeeRepo: Repository<Employee>,
-    @InjectRepository(Position) private readonly positionRepo: Repository<Position>,
-    @InjectRepository(PositionPermission) private readonly positionPermissionRepo: Repository<PositionPermission>,
-    @InjectRepository(Permission) private readonly permissionRepo: Repository<Permission>,
+    @InjectRepository(Employee)
+    private readonly employeeRepo: Repository<Employee>,
+    @InjectRepository(Position)
+    private readonly positionRepo: Repository<Position>,
+    @InjectRepository(PositionPermission)
+    private readonly positionPermissionRepo: Repository<PositionPermission>,
+    @InjectRepository(Permission)
+    private readonly permissionRepo: Repository<Permission>,
     @InjectRepository(User) private readonly userRepo: Repository<User>,
     @InjectRepository(EmployeeDepartmentAssignment)
     private readonly departmentAssignments: Repository<EmployeeDepartmentAssignment>,
@@ -35,52 +49,96 @@ export class EmployeesService {
 
   // ---- Positions ----
   async findAllPositions(tenantId?: number): Promise<PositionResponseDto[]> {
-    const positions = await this.positionRepo.find({ where: { isActive: true, tenantId: tenantId ?? IsNull() }, order: { name: 'ASC' } });
+    const positions = await this.positionRepo.find({
+      where: { isActive: true, tenantId: tenantId ?? IsNull() },
+      order: { name: 'ASC' },
+    });
     return Promise.all(positions.map((p) => this.toPositionResponse(p)));
   }
   async findPosition(id: number): Promise<Position> {
-    const p = await this.positionRepo.findOne({ where: { id } }); if (!p) throw new NotFoundException(`Position ${id} not found`); return p;
+    const p = await this.positionRepo.findOne({ where: { id } });
+    if (!p) throw new NotFoundException(`Position ${id} not found`);
+    return p;
   }
   async findPositionResponse(id: number): Promise<PositionResponseDto> {
     return this.toPositionResponse(await this.findPosition(id));
   }
-  async createPosition(dto: CreatePositionDto, tenantId?: number): Promise<PositionResponseDto> {
+  async createPosition(
+    dto: CreatePositionDto,
+    tenantId?: number,
+  ): Promise<PositionResponseDto> {
     const { permissionIds, ...positionInput } = dto;
-    const saved = await this.positionRepo.save(this.positionRepo.create({ ...positionInput, tenantId: tenantId ?? null }));
+    const saved = await this.positionRepo.save(
+      this.positionRepo.create({
+        ...positionInput,
+        tenantId: tenantId ?? null,
+      }),
+    );
     await this.replacePositionPermissions(saved.id, permissionIds);
     return this.toPositionResponse(saved);
   }
-  async updatePosition(id: number, dto: UpdatePositionDto): Promise<PositionResponseDto> {
+  async updatePosition(
+    id: number,
+    dto: UpdatePositionDto,
+  ): Promise<PositionResponseDto> {
     const { permissionIds, ...positionInput } = dto;
-    const p = await this.findPosition(id); Object.assign(p, positionInput);
+    const p = await this.findPosition(id);
+    Object.assign(p, positionInput);
     const saved = await this.positionRepo.save(p);
     await this.replacePositionPermissions(saved.id, permissionIds);
     return this.toPositionResponse(saved);
   }
   async removePosition(id: number): Promise<void> {
-    await this.findPosition(id); await this.positionRepo.delete(id);
+    await this.findPosition(id);
+    await this.positionRepo.delete(id);
   }
 
-  async assignPositionPermission(positionId: number, permissionId: number, createdBy: number): Promise<void> {
+  async assignPositionPermission(
+    positionId: number,
+    permissionId: number,
+    createdBy: number,
+  ): Promise<void> {
     await this.findPosition(positionId);
-    const permission = await this.permissionRepo.findOne({ where: { id: permissionId, isActive: true } });
-    if (!permission) throw new NotFoundException(`Permission ${permissionId} not found`);
-    const existing = await this.positionPermissionRepo.findOne({ where: { positionId, permissionId } });
-    if (!existing) await this.positionPermissionRepo.save(this.positionPermissionRepo.create({ positionId, permissionId, createdBy }));
+    const permission = await this.permissionRepo.findOne({
+      where: { id: permissionId, isActive: true },
+    });
+    if (!permission)
+      throw new NotFoundException(`Permission ${permissionId} not found`);
+    const existing = await this.positionPermissionRepo.findOne({
+      where: { positionId, permissionId },
+    });
+    if (!existing)
+      await this.positionPermissionRepo.save(
+        this.positionPermissionRepo.create({
+          positionId,
+          permissionId,
+          createdBy,
+        }),
+      );
   }
 
-  async unassignPositionPermission(positionId: number, permissionId: number): Promise<void> {
+  async unassignPositionPermission(
+    positionId: number,
+    permissionId: number,
+  ): Promise<void> {
     await this.findPosition(positionId);
     await this.positionPermissionRepo.delete({ positionId, permissionId });
   }
 
-  private async replacePositionPermissions(positionId: number, permissionIds?: number[]): Promise<void> {
+  private async replacePositionPermissions(
+    positionId: number,
+    permissionIds?: number[],
+  ): Promise<void> {
     if (permissionIds === undefined) return;
     await this.positionPermissionRepo.delete({ positionId });
     if (permissionIds.length > 0) {
       await this.positionPermissionRepo.save(
         [...new Set(permissionIds)].map((permissionId) =>
-          this.positionPermissionRepo.create({ positionId, permissionId, createdBy: null }),
+          this.positionPermissionRepo.create({
+            positionId,
+            permissionId,
+            createdBy: null,
+          }),
         ),
       );
     }
@@ -91,16 +149,44 @@ export class EmployeesService {
     query: ListEmployeesQueryDto,
     accessibleOutletIds: number[] | 'ALL' = 'ALL',
   ): Promise<PaginatedResponse<EmployeeResponseDto>> {
-    const { page, limit, search, outletId, positionId, employmentStatus } = query;
-    const qb = this.employeeRepo.createQueryBuilder('employee')
+    const { page, limit, search, outletId, positionId, employmentStatus } =
+      query;
+    const qb = this.employeeRepo
+      .createQueryBuilder('employee')
       .leftJoinAndSelect('employee.position', 'position')
       .leftJoinAndSelect('employee.user', 'user');
-    if (outletId !== undefined) qb.innerJoin('employee_outlet_assignments', 'employee_filter_outlet', 'employee_filter_outlet.employee_id = employee.id AND employee_filter_outlet.outlet_id = :outletId AND employee_filter_outlet.is_active = true', { outletId });
-    else if (accessibleOutletIds !== 'ALL') qb.innerJoin('employee_outlet_assignments', 'employee_filter_outlet', 'employee_filter_outlet.employee_id = employee.id AND employee_filter_outlet.outlet_id IN (:...accessibleOutletIds) AND employee_filter_outlet.is_active = true', { accessibleOutletIds: accessibleOutletIds.length ? accessibleOutletIds : [0] });
-    if (positionId) qb.andWhere('employee.position_id = :positionId', { positionId });
-    if (employmentStatus) qb.andWhere('employee.employment_status = :employmentStatus', { employmentStatus });
-    if (search) qb.andWhere('(employee.name ILIKE :search OR employee.employee_code ILIKE :search OR employee.email ILIKE :search)', { search: `%${search}%` });
-    qb.orderBy('employee.createdAt', 'DESC').skip((page - 1) * limit).take(limit);
+    if (outletId !== undefined)
+      qb.innerJoin(
+        'employee_outlet_assignments',
+        'employee_filter_outlet',
+        'employee_filter_outlet.employee_id = employee.id AND employee_filter_outlet.outlet_id = :outletId AND employee_filter_outlet.is_active = true',
+        { outletId },
+      );
+    else if (accessibleOutletIds !== 'ALL')
+      qb.innerJoin(
+        'employee_outlet_assignments',
+        'employee_filter_outlet',
+        'employee_filter_outlet.employee_id = employee.id AND employee_filter_outlet.outlet_id IN (:...accessibleOutletIds) AND employee_filter_outlet.is_active = true',
+        {
+          accessibleOutletIds: accessibleOutletIds.length
+            ? accessibleOutletIds
+            : [0],
+        },
+      );
+    if (positionId)
+      qb.andWhere('employee.position_id = :positionId', { positionId });
+    if (employmentStatus)
+      qb.andWhere('employee.employment_status = :employmentStatus', {
+        employmentStatus,
+      });
+    if (search)
+      qb.andWhere(
+        '(employee.name ILIKE :search OR employee.employee_code ILIKE :search OR employee.email ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    qb.orderBy('employee.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
     const [data, total] = await qb.getManyAndCount();
     return {
       data: await Promise.all(data.map((e) => this.toResponse(e))),
@@ -110,26 +196,40 @@ export class EmployeesService {
 
   /** Internal lookup — returns the raw entity (with position/defaultRole loaded) for outlet-access checks and other services. */
   async findOne(id: number): Promise<Employee> {
-    const e = await this.employeeRepo.findOne({ where: { id }, relations: ['position', 'user'] });
-    if (!e) throw new NotFoundException(`Employee ${id} not found`); return e;
+    const e = await this.employeeRepo.findOne({
+      where: { id },
+      relations: ['position', 'user'],
+    });
+    if (!e) throw new NotFoundException(`Employee ${id} not found`);
+    return e;
   }
 
   async findOneResponse(id: number): Promise<EmployeeResponseDto> {
     return this.toResponse(await this.findOne(id));
   }
 
-  async create(dto: CreateEmployeeDto, createdBy: number): Promise<EmployeeResponseDto> {
+  async create(
+    dto: CreateEmployeeDto,
+    createdBy: number,
+  ): Promise<EmployeeResponseDto> {
     await this.syncUserTenantToOutlet(dto.userId, dto.outletId);
     await this.syncIdentityToUser(dto.userId, dto.name, dto.email, dto.phone);
     const { outletId, ...employeeInput } = dto;
-    const employee = await this.employeeRepo.save(this.employeeRepo.create({
-      ...employeeInput, employeeCode: generateDocumentNumber('EMP', outletId), createdBy,
-    }));
+    const employee = await this.employeeRepo.save(
+      this.employeeRepo.create({
+        ...employeeInput,
+        employeeCode: generateDocumentNumber('EMP', outletId),
+        createdBy,
+      }),
+    );
     await this.assignOutlet(employee.id, outletId, createdBy);
     return this.toResponse(await this.findOne(employee.id));
   }
 
-  async update(id: number, dto: UpdateEmployeeDto): Promise<EmployeeResponseDto> {
+  async update(
+    id: number,
+    dto: UpdateEmployeeDto,
+  ): Promise<EmployeeResponseDto> {
     const e = await this.findOne(id);
     if (dto.outletId !== undefined) {
       await this.syncUserTenantToOutlet(
@@ -137,7 +237,12 @@ export class EmployeesService {
         dto.outletId,
       );
     }
-    await this.syncIdentityToUser(dto.userId !== undefined ? dto.userId : e.userId, dto.name, dto.email, dto.phone);
+    await this.syncIdentityToUser(
+      dto.userId !== undefined ? dto.userId : e.userId,
+      dto.name,
+      dto.email,
+      dto.phone,
+    );
     const { outletId, ...employeeInput } = dto;
     Object.assign(e, employeeInput);
     const saved = await this.employeeRepo.save(e);
@@ -146,7 +251,8 @@ export class EmployeesService {
   }
 
   async remove(id: number): Promise<void> {
-    const e = await this.findOne(id); await this.employeeRepo.remove(e);
+    const e = await this.findOne(id);
+    await this.employeeRepo.remove(e);
   }
 
   private async toResponse(employee: Employee): Promise<EmployeeResponseDto> {
@@ -185,30 +291,54 @@ export class EmployeesService {
   }
 
   async getOutletIds(employeeId: number): Promise<number[]> {
-    const rows = await this.outletAssignments.find({ where: { employeeId, isActive: true }, select: { outletId: true }, order: { createdAt: 'ASC' } });
+    const rows = await this.outletAssignments.find({
+      where: { employeeId, isActive: true },
+      select: { outletId: true },
+      order: { createdAt: 'ASC' },
+    });
     return rows.map((row) => row.outletId);
   }
 
   async assignOutlet(employeeId: number, outletId: number, assignedBy: number) {
     const employee = await this.findOne(employeeId);
-    const outlet = await this.employeeRepo.manager.getRepository(Outlet).findOne({
-      where: { id: outletId, tenantId: employee.user?.tenantId ?? undefined },
+    const outlet = await this.employeeRepo.manager
+      .getRepository(Outlet)
+      .findOne({
+        where: { id: outletId, tenantId: employee.user?.tenantId ?? undefined },
+      });
+    if (!outlet)
+      throw new NotFoundException(
+        `Outlet ${outletId} not found in the employee's tenant`,
+      );
+    const existing = await this.outletAssignments.findOne({
+      where: { employeeId, outletId },
     });
-    if (!outlet) throw new NotFoundException(`Outlet ${outletId} not found in the employee's tenant`);
-    const existing = await this.outletAssignments.findOne({ where: { employeeId, outletId } });
     if (existing) {
       existing.isActive = true;
       existing.assignedBy = assignedBy;
       return this.outletAssignments.save(existing);
     }
-    return this.outletAssignments.save(this.outletAssignments.create({ employeeId, outletId, assignedBy, isActive: true }));
+    return this.outletAssignments.save(
+      this.outletAssignments.create({
+        employeeId,
+        outletId,
+        assignedBy,
+        isActive: true,
+      }),
+    );
   }
 
   async removeOutlet(employeeId: number, outletId: number) {
     const employee = await this.findOne(employeeId);
     const outletIds = await this.getOutletIds(employeeId);
-    if (outletIds.length <= 1) throw new ConflictException('An employee must retain at least one outlet');
-    await this.outletAssignments.update({ employeeId, outletId }, { isActive: false });
+    if (outletIds.length <= 1)
+      throw new ConflictException(
+        'An employee must retain at least one outlet',
+      );
+    await this.outletAssignments.update(
+      { employeeId, outletId },
+      { isActive: false },
+    );
   }
 
   async listDepartments(employeeId: number) {
@@ -220,20 +350,37 @@ export class EmployeesService {
     });
   }
 
-  async assignDepartment(employeeId: number, departmentId: number, assignedBy: number) {
+  async assignDepartment(
+    employeeId: number,
+    departmentId: number,
+    assignedBy: number,
+  ) {
     const employee = await this.findOne(employeeId);
-    const department = await this.employeeRepo.manager.getRepository('outlet_departments').findOne({
-      where: { id: departmentId },
-    }) as { id: number; outlet_id?: number; outletId?: number } | null;
-    if (!department) throw new NotFoundException(`Department ${departmentId} not found`);
-    const departmentOutletId = Number(department.outletId ?? department.outlet_id);
+    const department = (await this.employeeRepo.manager
+      .getRepository('outlet_departments')
+      .findOne({
+        where: { id: departmentId },
+      })) as { id: number; outlet_id?: number; outletId?: number } | null;
+    if (!department)
+      throw new NotFoundException(`Department ${departmentId} not found`);
+    const departmentOutletId = Number(
+      department.outletId ?? department.outlet_id,
+    );
     if (!(await this.getOutletIds(employeeId)).includes(departmentOutletId)) {
-      throw new NotFoundException('Department does not belong to this employee\'s outlet');
+      throw new NotFoundException(
+        "Department does not belong to this employee's outlet",
+      );
     }
-    const existing = await this.departmentAssignments.findOne({ where: { employeeId, departmentId } });
+    const existing = await this.departmentAssignments.findOne({
+      where: { employeeId, departmentId },
+    });
     if (existing) return existing;
     return this.departmentAssignments.save(
-      this.departmentAssignments.create({ employeeId, departmentId, assignedBy }),
+      this.departmentAssignments.create({
+        employeeId,
+        departmentId,
+        assignedBy,
+      }),
     );
   }
 
@@ -243,7 +390,12 @@ export class EmployeesService {
   }
 
   /** Users are the canonical identity record for linked employees. */
-  private async syncIdentityToUser(userId: number | null | undefined, name?: string, email?: string, phone?: string): Promise<void> {
+  private async syncIdentityToUser(
+    userId: number | null | undefined,
+    name?: string,
+    email?: string,
+    phone?: string,
+  ): Promise<void> {
     if (!userId) return;
     const user = await this.userRepo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundException(`User ${userId} not found`);
@@ -253,30 +405,42 @@ export class EmployeesService {
     await this.userRepo.save(user);
   }
 
-  /** Keep a linked non-superadmin login inside the tenant that owns its outlet. */
-  private async syncUserTenantToOutlet(userId: number | null | undefined, outletId: number): Promise<void> {
+  /** Keep a linked login inside the tenant that owns its outlet. */
+  private async syncUserTenantToOutlet(
+    userId: number | null | undefined,
+    outletId: number,
+  ): Promise<void> {
     if (!userId) return;
     const [user, outlet] = await Promise.all([
       this.userRepo.findOne({ where: { id: userId } }),
-      this.employeeRepo.manager.getRepository(Outlet).findOne({ where: { id: outletId } }),
+      this.employeeRepo.manager
+        .getRepository(Outlet)
+        .findOne({ where: { id: outletId } }),
     ]);
     if (!user) throw new NotFoundException(`User ${userId} not found`);
     if (!outlet) throw new NotFoundException(`Outlet ${outletId} not found`);
-    if (!user.isSuperadmin && user.tenantId !== outlet.tenantId) {
+    if (user.tenantId !== outlet.tenantId) {
       user.tenantId = outlet.tenantId;
       await this.userRepo.save(user);
     }
   }
 
-  private async toPositionResponse(position: Position): Promise<PositionResponseDto> {
-    const assignments = await this.positionPermissionRepo.find({ where: { positionId: position.id }, relations: ['permission'] });
+  private async toPositionResponse(
+    position: Position,
+  ): Promise<PositionResponseDto> {
+    const assignments = await this.positionPermissionRepo.find({
+      where: { positionId: position.id },
+      relations: ['permission'],
+    });
     return {
       id: position.id,
       name: position.name,
       slug: position.slug,
       description: position.description,
       portal: position.portal,
-      permissionSlugs: assignments.map((assignment) => assignment.permission.slug),
+      permissionSlugs: assignments.map(
+        (assignment) => assignment.permission.slug,
+      ),
       isActive: position.isActive,
       createdAt: position.createdAt,
       updatedAt: position.updatedAt,

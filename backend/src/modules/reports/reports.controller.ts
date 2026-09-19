@@ -59,16 +59,9 @@ export class ReportsController {
     query: ListReportQueryDto,
     user: User,
   ): Promise<number[] | 'ALL'> {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return accessible;
   }
@@ -78,7 +71,7 @@ export class ReportsController {
     type: ReportType,
     user: User,
   ): Promise<void> {
-    if (!STAFF_REPORT_TYPES.includes(type) || user.isSuperadmin) return;
+    if (!STAFF_REPORT_TYPES.includes(type)) return;
     const grantedSlugs = await this.permissionsService.getPermissionSlugs(
       user.id,
     );
@@ -103,11 +96,7 @@ export class ReportsController {
     assertReportType(type);
     await this.assertStaffReportAccess(type, user);
     const accessible = await this.resolveReportOutletAccess(query, user);
-    const report = await this.reportsService.getReport(
-      type,
-      query,
-      accessible,
-    );
+    const report = await this.reportsService.getReport(type, query, accessible);
     return { ...report, columns: REPORT_COLUMNS[type] };
   }
 

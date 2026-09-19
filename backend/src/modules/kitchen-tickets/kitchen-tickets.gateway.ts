@@ -19,7 +19,6 @@ import { KitchenTicket } from './entities/kitchen-ticket.entity';
 
 interface KdsSocketData {
   userId?: number;
-  isSuperadmin?: boolean;
   customerId?: number;
 }
 
@@ -62,7 +61,9 @@ export interface GuestOrderUpdate {
     credentials: true,
   },
 })
-export class KitchenTicketsGateway implements OnGatewayConnection, OnGatewayInit {
+export class KitchenTicketsGateway
+  implements OnGatewayConnection, OnGatewayInit
+{
   private readonly logger = new Logger(KitchenTicketsGateway.name);
 
   @WebSocketServer()
@@ -92,7 +93,7 @@ export class KitchenTicketsGateway implements OnGatewayConnection, OnGatewayInit
     }
 
     if (redeemed.kind === 'staff') {
-      const payload = redeemed.payload as { userId: number; isSuperadmin: boolean };
+      const payload = redeemed.payload as { userId: number };
       // No further permission check: this namespace was originally KDS/POS-only
       // (orders.view / orders.manage), but it's now also the sole delivery
       // channel for notification.created — which spans every module
@@ -102,7 +103,6 @@ export class KitchenTicketsGateway implements OnGatewayConnection, OnGatewayInit
       // client receives everything emitted to its outlet room), matching the
       // existing coarse room-level model rather than introducing a new one.
       client.data.userId = payload.userId;
-      client.data.isSuperadmin = payload.isSuperadmin;
       // Lets targeted deliveries (e.g. cash-payment notifications, see
       // notifyUsersNotificationCreated) reach this user without requiring
       // them to have joined any particular outlet room.
@@ -137,7 +137,6 @@ export class KitchenTicketsGateway implements OnGatewayConnection, OnGatewayInit
     // request stream. Same OutletAccessService used by the REST endpoints.
     const allowed = await this.outletAccess.canAccessOutlet(
       client.data.userId,
-      client.data.isSuperadmin ?? false,
       body.outletId,
     );
     if (!allowed) {
@@ -172,17 +171,30 @@ export class KitchenTicketsGateway implements OnGatewayConnection, OnGatewayInit
 
   /** Pushes a persisted notification (e.g. "Table 8 — items ready") to every POS/waiter screen on the outlet. */
   notifyNotificationCreated(notification: Notification): void {
-    if (notification.recipientUserIds !== null && notification.recipientUserIds !== undefined) {
-      this.notifyUsersNotificationCreated(notification.recipientUserIds, notification);
+    if (
+      notification.recipientUserIds !== null &&
+      notification.recipientUserIds !== undefined
+    ) {
+      this.notifyUsersNotificationCreated(
+        notification.recipientUserIds,
+        notification,
+      );
       return;
     }
-    this.server.to(this.outletRoom(notification.outletId)).emit('notification.created', notification);
+    this.server
+      .to(this.outletRoom(notification.outletId))
+      .emit('notification.created', notification);
   }
 
   /** Pushes a persisted notification to a specific set of users only (e.g. cash-payment notifications, scoped to admin/manager/cashier) rather than the whole outlet room. */
-  notifyUsersNotificationCreated(userIds: number[], notification: Notification): void {
+  notifyUsersNotificationCreated(
+    userIds: number[],
+    notification: Notification,
+  ): void {
     for (const userId of userIds) {
-      this.server.to(this.userRoom(userId)).emit('notification.created', notification);
+      this.server
+        .to(this.userRoom(userId))
+        .emit('notification.created', notification);
     }
   }
 

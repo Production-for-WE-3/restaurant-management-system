@@ -35,11 +35,7 @@ export class ReservationsController {
   /** Resolves the reservation and asserts outlet access — same choke-point pattern as OrdersController#assertOrderAccess. */
   private async assertReservationAccess(id: number, user: User) {
     const reservation = await this.reservationsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      reservation.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, reservation.outletId);
     return reservation;
   }
 
@@ -53,16 +49,9 @@ export class ReservationsController {
     @Query() query: ListReservationsQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.reservationsService.findAll(query, accessible);
   }
@@ -70,7 +59,10 @@ export class ReservationsController {
   @Get(':id')
   @RequirePermissions('reservations.view')
   @ApiOperation({ summary: 'Gets a reservation' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertReservationAccess(id, user);
   }
 
@@ -78,11 +70,7 @@ export class ReservationsController {
   @RequirePermissions('reservations.manage')
   @ApiOperation({ summary: 'Creates a reservation' })
   async create(@Body() dto: CreateReservationDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.reservationsService.create(dto, user.id);
   }
 
@@ -118,7 +106,10 @@ export class ReservationsController {
   @Get(':id/tables')
   @RequirePermissions('reservations.view')
   @ApiOperation({ summary: "Lists a reservation's assigned dining tables" })
-  async listTables(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listTables(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertReservationAccess(id, user);
     return this.reservationsService.listTables(id);
   }

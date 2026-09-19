@@ -54,9 +54,9 @@ export function proxy(request: NextRequest) {
   }
 
   // "/" itself renders app/page.tsx, which does the real (backend-verified)
-  // permission check and sends admins/superadmins to /dashboard, everyone
-  // else to /staff — proxy can't make that call itself, it only knows a
-  // cookie is present.
+  // permission check and sends admins to /dashboard, everyone else to
+  // /staff — proxy can't make that call itself, it only knows a cookie is
+  // present.
   // Do not bounce /login merely because a cookie exists. The cookie may be
   // expired, revoked, or left over from a different cookie domain; the real
   // session check happens in the protected layout and must be recoverable.

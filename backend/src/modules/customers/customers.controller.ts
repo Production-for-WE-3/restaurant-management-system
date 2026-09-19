@@ -33,10 +33,7 @@ export class CustomersController {
   ) {}
 
   private async assertCustomerAccess(id: number, user: User): Promise<void> {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible === 'ALL') return;
     const visits = await this.customersService.listOutlets(id, accessible);
     if (visits.length === 0) {
@@ -53,16 +50,9 @@ export class CustomersController {
     @Query() query: ListCustomersQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.customersService.findAll(query, accessible);
   }
@@ -70,7 +60,10 @@ export class CustomersController {
   @Get(':id')
   @RequirePermissions('customers.view')
   @ApiOperation({ summary: 'Gets a customer' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertCustomerAccess(id, user);
     return this.customersService.findOneResponse(id);
   }
@@ -79,10 +72,14 @@ export class CustomersController {
   @RequirePermissions('customers.manage')
   @ApiOperation({ summary: 'Creates a customer' })
   async create(@Body() dto: CreateCustomerDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
-    const outletId = dto.outletId ?? (accessible !== 'ALL' && accessible.length === 1 ? accessible[0] : undefined);
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
+    const outletId =
+      dto.outletId ??
+      (accessible !== 'ALL' && accessible.length === 1
+        ? accessible[0]
+        : undefined);
     if (outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, outletId);
+      await this.outletAccess.assertOutletAccess(user.id, outletId);
     }
     return this.customersService.create(dto, outletId);
   }
@@ -104,7 +101,10 @@ export class CustomersController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('customers.manage')
   @ApiOperation({ summary: 'Soft-deletes a customer' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertCustomerAccess(id, user);
     return this.customersService.remove(id);
   }
@@ -112,8 +112,11 @@ export class CustomersController {
   @Get(':id/outlets')
   @RequirePermissions('customers.view')
   @ApiOperation({ summary: "Lists a customer's per-outlet visit stats" })
-  async listOutlets(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async listOutlets(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     await this.customersService.findOne(id);
     return this.customersService.listOutlets(id, accessible);
   }
@@ -127,7 +130,7 @@ export class CustomersController {
     @Body() dto: UpdateCustomerOutletDto,
     @CurrentUser() user: User,
   ) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, outletId);
+    await this.outletAccess.assertOutletAccess(user.id, outletId);
     return this.customersService.updateOutlet(id, outletId, dto);
   }
 }

@@ -47,15 +47,10 @@ export class WarehouseIngredientStocksController {
   ): Promise<number[] | 'ALL'> {
     const accessibleOutletIds = await this.outletAccess.getAccessibleOutletIds(
       user.id,
-      user.isSuperadmin,
     );
     if (warehouseId !== undefined) {
       const warehouse = await this.warehousesService.findOne(warehouseId);
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        warehouse.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
       return [warehouseId];
     }
     if (accessibleOutletIds === 'ALL') {
@@ -87,23 +82,15 @@ export class InventoryTransactionsController {
   ) {
     const accessibleOutletIds = await this.outletAccess.getAccessibleOutletIds(
       user.id,
-      user.isSuperadmin,
     );
     let accessibleWarehouseIds: number[] | 'ALL' = 'ALL';
     if (query.warehouseId !== undefined) {
-      const warehouse = await this.warehousesService.findOne(
-        query.warehouseId,
-      );
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        warehouse.outletId,
-      );
+      const warehouse = await this.warehousesService.findOne(query.warehouseId);
+      await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
       accessibleWarehouseIds = [query.warehouseId];
     } else if (accessibleOutletIds !== 'ALL') {
-      accessibleWarehouseIds = await this.warehousesService.findIdsForOutlets(
-        accessibleOutletIds,
-      );
+      accessibleWarehouseIds =
+        await this.warehousesService.findIdsForOutlets(accessibleOutletIds);
     }
     return this.stocksService.listTransactions(query, accessibleWarehouseIds);
   }

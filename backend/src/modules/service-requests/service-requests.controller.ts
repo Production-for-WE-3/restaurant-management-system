@@ -61,16 +61,9 @@ export class ServiceRequestsController {
     @Query() query: ListServiceRequestsQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.serviceRequestsService.findAll(query, accessible);
   }
@@ -81,13 +74,12 @@ export class ServiceRequestsController {
     summary:
       'Staff-initiated Call-Waiter request (e.g. from the Floor table dialog)',
   })
-  async create(@Body() dto: CreateServiceRequestDto, @CurrentUser() user: User) {
+  async create(
+    @Body() dto: CreateServiceRequestDto,
+    @CurrentUser() user: User,
+  ) {
     const table = await this.diningTablesService.findOne(dto.diningTableId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      table.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, table.outletId);
     return this.serviceRequestsService.create(dto, user.id);
   }
 
@@ -96,13 +88,12 @@ export class ServiceRequestsController {
   @ApiOperation({
     summary: 'Marks a service request as resolved (attended to)',
   })
-  async resolve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async resolve(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const request = await this.serviceRequestsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      request.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, request.outletId);
     return this.serviceRequestsService.resolve(id, user.id);
   }
 }

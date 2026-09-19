@@ -1,5 +1,10 @@
 import { Controller, Get, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
 import { OutletAccessService } from '../auth/outlet-access.service';
@@ -33,13 +38,9 @@ export class BootstrapController {
     // The client picks which of the caller's own outlets to bootstrap (e.g.
     // switching outlets via the picker), but the requested id is never
     // trusted on its own — it's checked against the caller's real
-    // assignments (or superadmin) before anything is fetched, same pattern
-    // as OrdersController#assertOrderAccess.
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      query.outletId,
-    );
+    // assignments before anything is fetched, same pattern as
+    // OrdersController#assertOrderAccess.
+    await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     return this.bootstrapService.getPosBootstrap(query);
   }
 
@@ -54,11 +55,7 @@ export class BootstrapController {
     @CurrentUser() user: User,
   ) {
     if (query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.bootstrapService.getReservationsBootstrap(query);
   }
@@ -67,22 +64,15 @@ export class BootstrapController {
   @RequirePermissions('ingredients.view')
   @ApiOperation({
     summary:
-      'One-call inventory screen bootstrap: ingredients, units, categories, warehouses — ingredients/warehouses scoped to the caller\'s accessible outlets',
+      "One-call inventory screen bootstrap: ingredients, units, categories, warehouses — ingredients/warehouses scoped to the caller's accessible outlets",
   })
   async getInventoryBootstrap(
     @Query() query: InventoryBootstrapQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.bootstrapService.getInventoryBootstrap(
       accessible,

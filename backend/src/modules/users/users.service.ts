@@ -21,7 +21,8 @@ export class UsersService {
   constructor(
     @InjectRepository(User) private readonly usersRepository: Repository<User>,
     private readonly configService: ConfigService<AppConfig>,
-    @InjectRepository(Employee) private readonly employeesRepository: Repository<Employee>,
+    @InjectRepository(Employee)
+    private readonly employeesRepository: Repository<Employee>,
   ) {}
 
   async findAll(
@@ -34,10 +35,21 @@ export class UsersService {
       // the ordinary staff user directory.
       where: search
         ? [
-            { isSuperadmin: false, name: ILike(`%${search}%`), ...(tenantId !== undefined ? { tenantId } : {}) },
-            { isSuperadmin: false, email: ILike(`%${search}%`), ...(tenantId !== undefined ? { tenantId } : {}) },
+            {
+              isSuperadmin: false,
+              name: ILike(`%${search}%`),
+              ...(tenantId !== undefined ? { tenantId } : {}),
+            },
+            {
+              isSuperadmin: false,
+              email: ILike(`%${search}%`),
+              ...(tenantId !== undefined ? { tenantId } : {}),
+            },
           ]
-        : { isSuperadmin: false, ...(tenantId !== undefined ? { tenantId } : {}) },
+        : {
+            isSuperadmin: false,
+            ...(tenantId !== undefined ? { tenantId } : {}),
+          },
       order: { name: 'ASC' },
       skip: (page - 1) * limit,
       take: limit,
@@ -49,11 +61,17 @@ export class UsersService {
     const employees = await this.employeesRepository.find({
       where: { userId: In(users.map((user) => user.id)) },
     });
-    const employeeByUserId = new Map(employees.map((employee) => [employee.userId, employee]));
+    const employeeByUserId = new Map(
+      employees.map((employee) => [employee.userId, employee]),
+    );
 
     return {
       data: users.map((user) =>
-        this.toResponse(user, activeUserIds.has(user.id), employeeByUserId.get(user.id)),
+        this.toResponse(
+          user,
+          activeUserIds.has(user.id),
+          employeeByUserId.get(user.id),
+        ),
       ),
       meta: { page, limit, total, totalPages: Math.ceil(total / limit) || 1 },
     };
@@ -62,7 +80,9 @@ export class UsersService {
   async findOne(id: number, tenantId?: number): Promise<UserResponseDto> {
     const user = await this.getUserOrThrow(id, tenantId);
     const activeUserIds = await this.getActiveUserIds([id]);
-    const employee = await this.employeesRepository.findOne({ where: { userId: id } });
+    const employee = await this.employeesRepository.findOne({
+      where: { userId: id },
+    });
     return this.toResponse(user, activeUserIds.has(id), employee ?? undefined);
   }
 
@@ -95,7 +115,11 @@ export class UsersService {
     }
   }
 
-  async update(id: number, dto: UpdateUserDto, tenantId?: number): Promise<UserResponseDto> {
+  async update(
+    id: number,
+    dto: UpdateUserDto,
+    tenantId?: number,
+  ): Promise<UserResponseDto> {
     const user = await this.getUserOrThrow(id, tenantId);
     Object.assign(user, {
       ...(dto.name !== undefined && { name: dto.name }),
@@ -107,8 +131,14 @@ export class UsersService {
       const saved = await this.usersRepository.save(user);
       await this.syncLinkedEmployees(saved);
       const activeUserIds = await this.getActiveUserIds([id]);
-      const employee = await this.employeesRepository.findOne({ where: { userId: id } });
-      return this.toResponse(saved, activeUserIds.has(id), employee ?? undefined);
+      const employee = await this.employeesRepository.findOne({
+        where: { userId: id },
+      });
+      return this.toResponse(
+        saved,
+        activeUserIds.has(id),
+        employee ?? undefined,
+      );
     } catch (error) {
       if (
         error instanceof QueryFailedError &&
@@ -120,20 +150,17 @@ export class UsersService {
     }
   }
 
-  async resetPassword(id: number, newPassword: string, tenantId?: number): Promise<void> {
+  async resetPassword(
+    id: number,
+    newPassword: string,
+    tenantId?: number,
+  ): Promise<void> {
     const user = await this.getUserOrThrowWithPassword(id, tenantId);
-    const saltRounds = this.configService.get('bcrypt', { infer: true })!.saltRounds;
+    const saltRounds = this.configService.get('bcrypt', {
+      infer: true,
+    })!.saltRounds;
     user.password = await bcrypt.hash(newPassword, saltRounds);
     await this.usersRepository.save(user);
-  }
-
-  async setSuperadmin(id: number, isSuperadmin: boolean, tenantId?: number): Promise<UserResponseDto> {
-    const user = await this.getUserOrThrow(id, tenantId);
-    user.isSuperadmin = isSuperadmin;
-    const saved = await this.usersRepository.save(user);
-    const activeUserIds = await this.getActiveUserIds([id]);
-    const employee = await this.employeesRepository.findOne({ where: { userId: id } });
-    return this.toResponse(saved, activeUserIds.has(id), employee ?? undefined);
   }
 
   /** Deactivating a user disables the linked employee account. */
@@ -155,12 +182,17 @@ export class UsersService {
     return user;
   }
 
-  private async getUserOrThrowWithPassword(id: number, tenantId?: number): Promise<User> {
+  private async getUserOrThrowWithPassword(
+    id: number,
+    tenantId?: number,
+  ): Promise<User> {
     const user = await this.usersRepository
       .createQueryBuilder('user')
       .addSelect('user.password')
       .where('user.id = :id', { id })
-      .andWhere(tenantId !== undefined ? 'user.tenant_id = :tenantId' : '1=1', { tenantId })
+      .andWhere(tenantId !== undefined ? 'user.tenant_id = :tenantId' : '1=1', {
+        tenantId,
+      })
       .getOne();
     if (!user) throw new NotFoundException(`User ${id} not found`);
     return user;
@@ -175,16 +207,26 @@ export class UsersService {
       .createQueryBuilder()
       .select('DISTINCT employee.user_id', 'userId')
       .from('employees', 'employee')
-      .innerJoin('positions', 'position', 'position.id = employee.position_id AND position.is_active = true')
+      .innerJoin(
+        'positions',
+        'position',
+        'position.id = employee.position_id AND position.is_active = true',
+      )
       .where('employee.user_id IN (:...userIds)', { userIds })
       .andWhere('employee.is_active = true')
-      .andWhere('employee.employment_status = :employmentStatus', { employmentStatus: 'active' })
+      .andWhere('employee.employment_status = :employmentStatus', {
+        employmentStatus: 'active',
+      })
       .getRawMany<{ userId: string }>();
 
     return new Set(rows.map((row) => parseInt(row.userId, 10)));
   }
 
-  private toResponse(user: User, isActive: boolean, employee?: Employee): UserResponseDto {
+  private toResponse(
+    user: User,
+    isActive: boolean,
+    employee?: Employee,
+  ): UserResponseDto {
     return {
       id: user.id,
       name: user.name,
@@ -203,8 +245,11 @@ export class UsersService {
 
   /** Keep legacy employee columns aligned; linked employee reads use User as their source of truth. */
   private async syncLinkedEmployees(user: User): Promise<void> {
-    await this.employeesRepository.createQueryBuilder().update(Employee)
+    await this.employeesRepository
+      .createQueryBuilder()
+      .update(Employee)
       .set({ name: user.name, email: user.email, phone: user.phone })
-      .where('user_id = :userId', { userId: user.id }).execute();
+      .where('user_id = :userId', { userId: user.id })
+      .execute();
   }
 }

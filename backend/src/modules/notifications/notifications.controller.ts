@@ -29,11 +29,7 @@ export class NotificationsController {
   /** Resolves the notification and asserts outlet access — same choke-point pattern as OrdersController#assertOrderAccess. */
   private async assertNotificationAccess(id: number, user: User) {
     const notification = await this.notificationsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      notification.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, notification.outletId);
     return notification;
   }
 
@@ -47,16 +43,9 @@ export class NotificationsController {
     @Query() query: ListNotificationsQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.notificationsService.findAll(query, accessible, user.id);
   }
@@ -69,24 +58,24 @@ export class NotificationsController {
     @CurrentUser() user: User,
   ) {
     const parsedOutletId = outletId ? Number(outletId) : undefined;
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && parsedOutletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        parsedOutletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, parsedOutletId);
     }
-    return this.notificationsService.unreadCount(parsedOutletId, accessible, user.id);
+    return this.notificationsService.unreadCount(
+      parsedOutletId,
+      accessible,
+      user.id,
+    );
   }
 
   @Post(':id/read')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Marks a single notification as read' })
-  async markRead(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async markRead(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertNotificationAccess(id, user);
     return this.notificationsService.markRead(id);
   }
@@ -100,18 +89,17 @@ export class NotificationsController {
     @Body() dto: MarkAllNotificationsReadDto,
     @CurrentUser() user: User,
   ) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.notificationsService.markAllRead(dto.outletId);
   }
 
   @Post(':id/archive')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Archives a notification' })
-  async archive(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async archive(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertNotificationAccess(id, user);
     return this.notificationsService.archive(id);
   }
@@ -119,7 +107,10 @@ export class NotificationsController {
   @Post(':id/unarchive')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Restores an archived notification' })
-  async unarchive(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async unarchive(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertNotificationAccess(id, user);
     return this.notificationsService.unarchive(id);
   }
@@ -127,7 +118,10 @@ export class NotificationsController {
   @Delete(':id')
   @RequirePermissions('orders.view')
   @ApiOperation({ summary: 'Permanently deletes a notification' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertNotificationAccess(id, user);
     return this.notificationsService.remove(id);
   }

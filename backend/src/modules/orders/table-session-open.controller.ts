@@ -32,11 +32,7 @@ export class TableSessionOpenController {
       'Opens a table session and creates its first order atomically in one transaction, returning both — replaces the old create-session-then-create-order two-request flow so the client never renders an intermediate "no order yet" state.',
   })
   async open(@Body() dto: OpenTableSessionDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.ordersService.openTableWithOrder(dto, user.id);
   }
 }

@@ -35,10 +35,13 @@ export class WarehousesController {
   @ApiOperation({
     summary: 'Lists warehouses (paginated, optional search + outletId filter)',
   })
-  async findAll(@Query() query: ListWarehousesQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListWarehousesQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, query.outletId);
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.warehousesService.findAll(query, accessible);
   }
@@ -46,9 +49,12 @@ export class WarehousesController {
   @Get(':id')
   @RequirePermissions('warehouses.view')
   @ApiOperation({ summary: 'Gets a warehouse' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const warehouse = await this.warehousesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, warehouse.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return warehouse;
   }
 
@@ -59,7 +65,7 @@ export class WarehousesController {
       'Creates a warehouse (setting isDefault unsets any other default in the same outlet)',
   })
   async create(@Body() dto: CreateWarehouseDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, dto.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.warehousesService.create(dto);
   }
 
@@ -72,7 +78,7 @@ export class WarehousesController {
     @CurrentUser() user: User,
   ) {
     const warehouse = await this.warehousesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, warehouse.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return this.warehousesService.update(id, dto);
   }
 
@@ -80,9 +86,12 @@ export class WarehousesController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('warehouses.manage')
   @ApiOperation({ summary: 'Soft-deletes a warehouse' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const warehouse = await this.warehousesService.findOne(id);
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, warehouse.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return this.warehousesService.remove(id);
   }
 }

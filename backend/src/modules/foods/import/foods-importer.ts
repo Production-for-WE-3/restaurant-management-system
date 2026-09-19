@@ -92,6 +92,7 @@ interface FoodImportRow extends ImportValidatedRow {
   shortDescription: string | null;
   imageUrl: string | null;
   foodCategory: string | null;
+  foodCategoryName: string | null;
   foodCategoryId: number | null;
   itemType: FoodItemType;
   departmentType: OutletDepartmentType | null;
@@ -126,6 +127,11 @@ interface FoodImportRow extends ImportValidatedRow {
  * tenant's global lists. An unrecognised name IS an error — unlike category,
  * a missing variant would produce a broken FoodVariant with a null FK that
  * silently falls back to the wrong item at order time.
+ *
+ * Category is resolved by name the same way, but an unmatched name is never
+ * an error — commitRows auto-creates it (same find-or-create shape as
+ * variant/subVariant) so legacy sheets bring their categories with them
+ * instead of importing every row as "Uncategorized".
  */
 @Injectable()
 export class FoodsImporter implements ImportDomainConfig<Record<string, string>, FoodImportRow> {
@@ -245,6 +251,7 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
         shortDescription: raw.shortDescription?.trim() || null,
         imageUrl: raw.imageUrl ? firstImageUrl(raw.imageUrl.trim()) || null : null,
         foodCategory: foodCategoryRaw,
+        foodCategoryName: foodCategoryRaw,
         foodCategoryId,
         itemType: itemType as FoodItemType,
         departmentType,
@@ -267,6 +274,7 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
     const foodVariantRepo = manager.getRepository(FoodVariant);
     const variantRepo = manager.getRepository(Variant);
     const subVariantRepo = manager.getRepository(SubVariant);
+    const foodCategoryRepo = manager.getRepository(FoodCategory);
     const failures: ImportCommitResult['failures'] = [];
     const succeeded: ImportCommitResult['succeeded'] = [];
 
@@ -274,6 +282,51 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
     // "Chicken") only hit the DB once. Keys are lower-cased display names.
     const variantIdCache = new Map<string, number>();
     const subVariantIdCache = new Map<string, number>();
+    const categoryIdCache = new Map<string, number>();
+
+    /**
+     * Finds the category by name in this tenant, or creates it. Slug is
+     * globally unique (not per-tenant), so a slugified name collision with
+     * another tenant's category falls back to a tenant-suffixed slug rather
+     * than failing the row.
+     */
+    const resolveCategory = async (name: string, rowNumber: number): Promise<number> => {
+      const key = name.toLowerCase();
+      const cached = categoryIdCache.get(key);
+      if (cached !== undefined) return cached;
+      const existing = await foodCategoryRepo.findOne({
+        where: scopedWhere(this.tenantContext, { name }),
+        select: { id: true },
+      });
+      if (existing) {
+        categoryIdCache.set(key, existing.id);
+        return existing.id;
+      }
+      const baseSlug = slugify(name) || 'category';
+      // A failed INSERT aborts the surrounding SAVEPOINT scope until rolled
+      // back to a recovery point — nest one here so a slug collision (from
+      // another tenant's category of the same name) can be retried with a
+      // suffixed slug instead of poisoning the row's own outer savepoint.
+      const nested = `import_category_${rowNumber}_${categoryIdCache.size}`;
+      await manager.query(`SAVEPOINT "${nested}"`);
+      try {
+        const created = await foodCategoryRepo.save(
+          foodCategoryRepo.create({ name, slug: baseSlug, ...tenantFields(this.tenantContext) }),
+        );
+        await manager.query(`RELEASE SAVEPOINT "${nested}"`);
+        categoryIdCache.set(key, created.id);
+        return created.id;
+      } catch {
+        await manager.query(`ROLLBACK TO SAVEPOINT "${nested}"`);
+        const slug = `${baseSlug}-${this.tenantContext.getTenantId() ?? 'x'}`;
+        const created = await foodCategoryRepo.save(
+          foodCategoryRepo.create({ name, slug, ...tenantFields(this.tenantContext) }),
+        );
+        await manager.query(`RELEASE SAVEPOINT "${nested}"`);
+        categoryIdCache.set(key, created.id);
+        return created.id;
+      }
+    };
 
     /** Finds the variant by name in this tenant, or creates it. */
     const resolveVariant = async (name: string): Promise<number> => {
@@ -324,11 +377,17 @@ export class FoodsImporter implements ImportDomainConfig<Record<string, string>,
       const savepoint = `import_row_${row.rowNumber}`;
       await manager.query(`SAVEPOINT "${savepoint}"`);
       try {
+        // 0. Resolve the category — auto-create if the name didn't match an
+        //    existing one yet (find-or-create, same as variant/sub-variant).
+        const resolvedCategoryId = row.foodCategoryName
+          ? (row.foodCategoryId ?? (await resolveCategory(row.foodCategoryName, row.rowNumber)))
+          : null;
+
         // 1. Create the Food record.
         const saved = await foodRepo.save(
           foodRepo.create({
             ...tenantFields(this.tenantContext),
-            foodCategoryId: row.foodCategoryId,
+            foodCategoryId: resolvedCategoryId,
             name: row.name,
             slug: row.slug,
             skuSegment: row.skuSegment,

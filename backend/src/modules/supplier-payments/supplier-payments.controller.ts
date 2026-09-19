@@ -1,4 +1,14 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  ParseIntPipe,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { RequirePermissions } from '../auth/decorators/require-permissions.decorator';
@@ -20,36 +30,53 @@ export class SupplierPaymentsController {
   /** Resolves the payment and asserts outlet access — same choke-point pattern as OrdersController#assertOrderAccess. */
   private async assertPaymentAccess(id: number, user: User) {
     const payment = await this.spService.findOne(id);
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, payment.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, payment.outletId);
     return payment;
   }
 
-  @Get() @RequirePermissions('supplier-payments.view')
+  @Get()
+  @RequirePermissions('supplier-payments.view')
   @ApiOperation({ summary: 'Lists supplier payments (paginated, filterable)' })
-  async findAll(@Query() query: ListSupplierPaymentsQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListSupplierPaymentsQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, query.outletId);
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.spService.findAll(query, accessible);
   }
 
-  @Get(':id') @RequirePermissions('supplier-payments.view')
+  @Get(':id')
+  @RequirePermissions('supplier-payments.view')
   @ApiOperation({ summary: 'Gets a supplier payment' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertPaymentAccess(id, user);
   }
 
-  @Post() @RequirePermissions('supplier-payments.manage')
+  @Post()
+  @RequirePermissions('supplier-payments.manage')
   @ApiOperation({ summary: 'Records a supplier payment' })
-  async create(@Body() dto: CreateSupplierPaymentDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, dto.outletId);
+  async create(
+    @Body() dto: CreateSupplierPaymentDto,
+    @CurrentUser() user: User,
+  ) {
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.spService.create(dto, user.id);
   }
 
-  @Post(':id/cancel') @HttpCode(HttpStatus.OK) @RequirePermissions('supplier-payments.manage')
+  @Post(':id/cancel')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('supplier-payments.manage')
   @ApiOperation({ summary: 'Cancels a supplier payment' })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertPaymentAccess(id, user);
     return this.spService.cancel(id);
   }

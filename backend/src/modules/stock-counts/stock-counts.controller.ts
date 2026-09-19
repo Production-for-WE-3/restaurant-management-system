@@ -41,11 +41,7 @@ export class StockCountsController {
   ): Promise<IngredientStockCount> {
     const count = await this.stockCountsService.findOne(id);
     const warehouse = await this.warehousesService.findOne(count.warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return count;
   }
 
@@ -54,11 +50,7 @@ export class StockCountsController {
     user: User,
   ): Promise<void> {
     const warehouse = await this.warehousesService.findOne(warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
   }
 
   @Get()
@@ -67,21 +59,29 @@ export class StockCountsController {
     summary:
       'Lists stock counts (paginated, filter by warehouseId/status/search)',
   })
-  async findAll(@Query() query: ListStockCountsQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListStockCountsQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.warehouseId !== undefined) {
       await this.assertWarehouseAccess(query.warehouseId, user);
       return this.stockCountsService.findAll(query);
     }
     const accessibleWarehouseIds =
-      accessible === 'ALL' ? 'ALL' : await this.warehousesService.findIdsForOutlets(accessible);
+      accessible === 'ALL'
+        ? 'ALL'
+        : await this.warehousesService.findIdsForOutlets(accessible);
     return this.stockCountsService.findAll(query, accessibleWarehouseIds);
   }
 
   @Get(':id')
   @RequirePermissions('stock-counts.view')
   @ApiOperation({ summary: 'Gets a stock count' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertAccess(id, user);
   }
 
@@ -111,7 +111,10 @@ export class StockCountsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('stock-counts.manage')
   @ApiOperation({ summary: 'Deletes a draft stock count' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockCountsService.remove(id);
   }
@@ -119,7 +122,10 @@ export class StockCountsController {
   @Get(':id/items')
   @RequirePermissions('stock-counts.view')
   @ApiOperation({ summary: "Lists a stock count's items" })
-  async listItems(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listItems(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockCountsService.listItems(id);
   }
@@ -168,7 +174,10 @@ export class StockCountsController {
     summary:
       'Completes a draft stock count: snapshots systemQuantity from current stock and computes differences per item (no ledger effect yet)',
   })
-  async complete(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async complete(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockCountsService.complete(id, user.id);
   }
@@ -192,7 +201,10 @@ export class StockCountsController {
   @ApiOperation({
     summary: 'Cancels a draft or completed stock count (no ledger effect)',
   })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockCountsService.cancel(id);
   }

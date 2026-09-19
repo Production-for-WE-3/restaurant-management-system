@@ -32,11 +32,7 @@ export class TableSessionsController {
   /** Resolves the session and asserts outlet access — same choke-point pattern as OrdersController#assertOrderAccess. */
   private async assertSessionAccess(id: number, user: User) {
     const session = await this.tableSessionsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      session.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, session.outletId);
     return session;
   }
 
@@ -50,16 +46,9 @@ export class TableSessionsController {
     @Query() query: ListTableSessionsQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.tableSessionsService.findAll(query, accessible);
   }
@@ -67,9 +56,13 @@ export class TableSessionsController {
   @Get(':id')
   @RequirePermissions('table-sessions.view')
   @ApiOperation({
-    summary: 'Gets a table session, with outlet/table names and guest (customer) detail resolved',
+    summary:
+      'Gets a table session, with outlet/table names and guest (customer) detail resolved',
   })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertSessionAccess(id, user);
     return this.tableSessionsService.findOneDetailed(id);
   }
@@ -80,11 +73,7 @@ export class TableSessionsController {
     summary: 'Starts a table session (flips the table status to occupied)',
   })
   async create(@Body() dto: CreateTableSessionDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.tableSessionsService.create(dto, user.id);
   }
 
@@ -129,21 +118,32 @@ export class TableSessionsController {
 
   @Get(':id/customers')
   @RequirePermissions('table-sessions.view')
-  async listCustomers(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listCustomers(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertSessionAccess(id, user);
     return this.tableSessionsService.listCustomers(id);
   }
 
   @Post(':id/customers')
   @RequirePermissions('table-sessions.manage')
-  async addCustomer(@Param('id', ParseIntPipe) id: number, @Body() dto: AssignTableSessionCustomerDto, @CurrentUser() user: User) {
+  async addCustomer(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: AssignTableSessionCustomerDto,
+    @CurrentUser() user: User,
+  ) {
     await this.assertSessionAccess(id, user);
     return this.tableSessionsService.addCustomer(id, dto.customerId);
   }
 
   @Delete(':id/customers/:customerId')
   @RequirePermissions('table-sessions.manage')
-  async removeCustomer(@Param('id', ParseIntPipe) id: number, @Param('customerId', ParseIntPipe) customerId: number, @CurrentUser() user: User) {
+  async removeCustomer(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('customerId', ParseIntPipe) customerId: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertSessionAccess(id, user);
     return this.tableSessionsService.removeCustomer(id, customerId);
   }

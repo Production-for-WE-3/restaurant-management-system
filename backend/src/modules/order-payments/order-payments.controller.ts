@@ -40,7 +40,7 @@ export class OrderPaymentsController {
    * unaffected.
    */
   private async assertRefundAllowed(dtoType: string | undefined, user: User) {
-    if (dtoType !== 'refund' || user.isSuperadmin) return;
+    if (dtoType !== 'refund') return;
     const allowed = await this.permissionsService.hasPermission(
       user.id,
       'order-payments.refund',
@@ -64,14 +64,13 @@ export class OrderPaymentsController {
   @Get('order-payments/:id')
   @RequirePermissions('order-payments.view')
   @ApiOperation({ summary: 'Gets an order payment' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const payment = await this.orderPaymentsService.findOne(id);
     const order = await this.ordersService.findOne(payment.orderId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      order.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, order.outletId);
     return payment;
   }
 
@@ -87,11 +86,7 @@ export class OrderPaymentsController {
     @CurrentUser() user: User,
   ) {
     const order = await this.ordersService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      order.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, order.outletId);
     await this.assertRefundAllowed(dto.type, user);
     return this.orderPaymentsService.create(id, dto, user.id);
   }
@@ -108,11 +103,7 @@ export class OrderPaymentsController {
     @CurrentUser() user: User,
   ) {
     const session = await this.tableSessionsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      session.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, session.outletId);
     return this.orderPaymentsService.payForTableSession(id, dto, user.id);
   }
 }

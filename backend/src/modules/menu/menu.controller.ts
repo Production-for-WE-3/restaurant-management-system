@@ -11,19 +11,28 @@ import { MenuService } from './menu.service';
 @Controller('menu')
 @RequirePermissions('orders.manage')
 export class MenuController {
-  constructor(private readonly menuService: MenuService, private readonly outletAccess: OutletAccessService) {}
+  constructor(
+    private readonly menuService: MenuService,
+    private readonly outletAccess: OutletAccessService,
+  ) {}
 
   @Get('version')
   @ApiOperation({ summary: 'Get the current menu version' })
-  async version(@Query('outletId') outletId: number, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, outletId);
+  async version(
+    @Query('outletId') outletId: number,
+    @CurrentUser() user: User,
+  ) {
+    await this.outletAccess.assertOutletAccess(user.id, outletId);
     return this.menuService.getVersion();
   }
 
   @Get('bootstrap')
   @ApiOperation({ summary: 'Download the POS menu catalog' })
-  async bootstrap(@Query('outletId') outletId: number, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, outletId);
+  async bootstrap(
+    @Query('outletId') outletId: number,
+    @CurrentUser() user: User,
+  ) {
+    await this.outletAccess.assertOutletAccess(user.id, outletId);
     return this.menuService.getBootstrap(outletId);
   }
 }

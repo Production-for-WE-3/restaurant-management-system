@@ -40,16 +40,9 @@ export class IngredientsController {
     @Query() query: ListIngredientsQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.ingredientsService.findAll(query, accessible);
   }
@@ -62,11 +55,7 @@ export class IngredientsController {
     @CurrentUser() user: User,
   ) {
     const ingredient = await this.ingredientsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      ingredient.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, ingredient.outletId);
     return ingredient;
   }
 
@@ -74,43 +63,24 @@ export class IngredientsController {
   @RequirePermissions('ingredients.manage')
   @ApiOperation({ summary: 'Creates an ingredient' })
   async create(@Body() dto: CreateIngredientDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.ingredientsService.create(dto);
   }
 
   @Patch(':id')
   @RequirePermissions('ingredients.manage')
-  @ApiOperation({ summary: 'Updates an ingredient (baseUnitId/outletId are immutable)' })
+  @ApiOperation({
+    summary: 'Updates an ingredient (baseUnitId/outletId are immutable)',
+  })
   async update(
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateIngredientDto,
     @CurrentUser() user: User,
   ) {
     const ingredient = await this.ingredientsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      ingredient.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, ingredient.outletId);
     return this.ingredientsService.update(id, dto);
   }
-
-  /*
-  @Patch(':id/outlet')
-  @UseGuards(SuperadminGuard)
-  @RequirePermissions('ingredients.manage')
-  @ApiOperation({ summary: 'Moves an ingredient to another outlet (superadmin repair action)' })
-  async moveToOutlet(
-    @Param('id', ParseIntPipe) id: number,
-    @Body() dto: MoveIngredientDto,
-  ) {
-    return this.ingredientsService.moveToOutlet(id, dto);
-  }
-  */
 
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
@@ -121,11 +91,7 @@ export class IngredientsController {
     @CurrentUser() user: User,
   ) {
     const ingredient = await this.ingredientsService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      ingredient.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, ingredient.outletId);
     return this.ingredientsService.remove(id);
   }
 }

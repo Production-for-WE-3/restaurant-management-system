@@ -40,16 +40,9 @@ export class DiningAreasController {
     @Query() query: ListDiningAreasQueryDto,
     @CurrentUser() user: User,
   ) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(
-      user.id,
-      user.isSuperadmin,
-    );
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (accessible !== 'ALL' && query.outletId !== undefined) {
-      await this.outletAccess.assertOutletAccess(
-        user.id,
-        user.isSuperadmin,
-        query.outletId,
-      );
+      await this.outletAccess.assertOutletAccess(user.id, query.outletId);
     }
     return this.diningAreasService.findAll(query, accessible);
   }
@@ -57,13 +50,12 @@ export class DiningAreasController {
   @Get(':id')
   @RequirePermissions('dining-areas.view')
   @ApiOperation({ summary: 'Gets a dining area' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const area = await this.diningAreasService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      area.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, area.outletId);
     return area;
   }
 
@@ -71,11 +63,7 @@ export class DiningAreasController {
   @RequirePermissions('dining-areas.manage')
   @ApiOperation({ summary: 'Creates a dining area' })
   async create(@Body() dto: CreateDiningAreaDto, @CurrentUser() user: User) {
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      dto.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.diningAreasService.create(dto);
   }
 
@@ -88,11 +76,7 @@ export class DiningAreasController {
     @CurrentUser() user: User,
   ) {
     const area = await this.diningAreasService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      area.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, area.outletId);
     return this.diningAreasService.update(id, dto);
   }
 
@@ -103,13 +87,12 @@ export class DiningAreasController {
     summary:
       'Deletes a dining area (cascades its dining tables — no soft delete)',
   })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     const area = await this.diningAreasService.findOne(id);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      area.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, area.outletId);
     return this.diningAreasService.remove(id);
   }
 }

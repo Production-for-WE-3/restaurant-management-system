@@ -21,7 +21,7 @@ import { useCreateDiningTable } from "@/hooks/use-dining-tables"
 import { useOutlets } from "@/hooks/use-outlets"
 import { createDiningTableSchema, type CreateDiningTableInput } from "@/lib/validators/dining-tables"
 
-/** Superadmin-only table provisioning — mirrors operational-web's create dialog. */
+/** Table provisioning for dining-tables.manage holders — mirrors operational-web's create dialog. */
 export function CreateDiningTableDialog() {
   const [open, setOpen] = useState(false)
   const { data: outlets, isLoading: outletsLoading } = useOutlets({ limit: 100 })

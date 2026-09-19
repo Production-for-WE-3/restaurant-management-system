@@ -81,7 +81,10 @@ export class FoodsController {
   @Patch(':id')
   @RequirePermissions('foods.manage')
   @ApiOperation({ summary: 'Updates a food (slug is immutable)' })
-  async update(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateFoodDto) {
+  async update(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateFoodDto,
+  ) {
     const food = await this.foodsService.update(id, dto);
     return this.foodsService.toResponse(food);
   }
@@ -114,7 +117,7 @@ export class FoodsController {
     @Body() dto: UpsertFoodOutletDto,
     @CurrentUser() user: User,
   ) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, dto.outletId);
+    await this.outletAccess.assertOutletAccess(user.id, dto.outletId);
     return this.foodsService.upsertOutletOverride(id, dto);
   }
 
@@ -130,7 +133,7 @@ export class FoodsController {
     @Param('outletId', ParseIntPipe) outletId: number,
     @CurrentUser() user: User,
   ) {
-    await this.outletAccess.assertOutletAccess(user.id, user.isSuperadmin, outletId);
+    await this.outletAccess.assertOutletAccess(user.id, outletId);
     return this.foodsService.removeOutletOverride(id, outletId);
   }
 

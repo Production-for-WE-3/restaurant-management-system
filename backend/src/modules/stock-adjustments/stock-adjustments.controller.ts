@@ -40,12 +40,10 @@ export class StockAdjustmentsController {
     user: User,
   ): Promise<IngredientStockAdjustment> {
     const adjustment = await this.stockAdjustmentsService.findOne(id);
-    const warehouse = await this.warehousesService.findOne(adjustment.warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
+    const warehouse = await this.warehousesService.findOne(
+      adjustment.warehouseId,
     );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
     return adjustment;
   }
 
@@ -54,11 +52,7 @@ export class StockAdjustmentsController {
     user: User,
   ): Promise<void> {
     const warehouse = await this.warehousesService.findOne(warehouseId);
-    await this.outletAccess.assertOutletAccess(
-      user.id,
-      user.isSuperadmin,
-      warehouse.outletId,
-    );
+    await this.outletAccess.assertOutletAccess(user.id, warehouse.outletId);
   }
 
   @Get()
@@ -67,28 +61,39 @@ export class StockAdjustmentsController {
     summary:
       'Lists stock adjustments (paginated, filter by warehouseId/status/search)',
   })
-  async findAll(@Query() query: ListStockAdjustmentsQueryDto, @CurrentUser() user: User) {
-    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id, user.isSuperadmin);
+  async findAll(
+    @Query() query: ListStockAdjustmentsQueryDto,
+    @CurrentUser() user: User,
+  ) {
+    const accessible = await this.outletAccess.getAccessibleOutletIds(user.id);
     if (query.warehouseId !== undefined) {
       await this.assertWarehouseAccess(query.warehouseId, user);
       return this.stockAdjustmentsService.findAll(query);
     }
     const accessibleWarehouseIds =
-      accessible === 'ALL' ? 'ALL' : await this.warehousesService.findIdsForOutlets(accessible);
+      accessible === 'ALL'
+        ? 'ALL'
+        : await this.warehousesService.findIdsForOutlets(accessible);
     return this.stockAdjustmentsService.findAll(query, accessibleWarehouseIds);
   }
 
   @Get(':id')
   @RequirePermissions('stock-adjustments.view')
   @ApiOperation({ summary: 'Gets a stock adjustment' })
-  async findOne(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async findOne(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     return this.assertAccess(id, user);
   }
 
   @Post()
   @RequirePermissions('stock-adjustments.manage')
   @ApiOperation({ summary: 'Creates a draft stock adjustment' })
-  async create(@Body() dto: CreateStockAdjustmentDto, @CurrentUser() user: User) {
+  async create(
+    @Body() dto: CreateStockAdjustmentDto,
+    @CurrentUser() user: User,
+  ) {
     await this.assertWarehouseAccess(dto.warehouseId, user);
     return this.stockAdjustmentsService.create(dto, user.id);
   }
@@ -111,7 +116,10 @@ export class StockAdjustmentsController {
   @HttpCode(HttpStatus.NO_CONTENT)
   @RequirePermissions('stock-adjustments.manage')
   @ApiOperation({ summary: 'Deletes a draft stock adjustment' })
-  async remove(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async remove(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockAdjustmentsService.remove(id);
   }
@@ -119,7 +127,10 @@ export class StockAdjustmentsController {
   @Get(':id/items')
   @RequirePermissions('stock-adjustments.view')
   @ApiOperation({ summary: "Lists a stock adjustment's items" })
-  async listItems(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async listItems(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockAdjustmentsService.listItems(id);
   }
@@ -171,7 +182,10 @@ export class StockAdjustmentsController {
     summary:
       'Approves a draft stock adjustment: posts adjustment_in/adjustment_out ledger entries for items with a nonzero difference and updates warehouse stock',
   })
-  async approve(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async approve(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockAdjustmentsService.approve(id, user.id);
   }
@@ -181,7 +195,10 @@ export class StockAdjustmentsController {
   @ApiOperation({
     summary: 'Cancels a draft stock adjustment (no ledger effect)',
   })
-  async cancel(@Param('id', ParseIntPipe) id: number, @CurrentUser() user: User) {
+  async cancel(
+    @Param('id', ParseIntPipe) id: number,
+    @CurrentUser() user: User,
+  ) {
     await this.assertAccess(id, user);
     return this.stockAdjustmentsService.cancel(id);
   }
