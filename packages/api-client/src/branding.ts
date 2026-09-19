@@ -1,3 +1,5 @@
+import { cache } from "react"
+
 export interface Branding {
   restaurantName: string | null
   logoUrl: string | null
@@ -33,7 +35,7 @@ export const EMPTY_BRANDING: Branding = {
  *
  * `baseUrl` includes the /api prefix, e.g. http://localhost:3001/api.
  */
-export async function fetchBranding(baseUrl: string, headers?: HeadersInit): Promise<Branding> {
+export const fetchBranding = cache(async (baseUrl: string, headers?: HeadersInit): Promise<Branding> => {
   try {
     const response = await fetch(`${baseUrl}/settings/branding/public`, {
       headers,
@@ -48,4 +50,4 @@ export async function fetchBranding(baseUrl: string, headers?: HeadersInit): Pro
   } catch {
     return EMPTY_BRANDING
   }
-}
+})

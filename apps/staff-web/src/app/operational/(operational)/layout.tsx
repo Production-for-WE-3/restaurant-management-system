@@ -5,13 +5,20 @@ import { findRequiredPermission, hasRoutePermission } from "@rms/auth/route-acce
 import { ActiveOutletProvider } from "@rms/api-client/outlet/active-outlet-context"
 import { RealtimeInvalidationProvider } from "@rms/api-client/realtime-invalidation-provider"
 import { QueryProvider } from "@rms/api-client/query-provider"
-import { BrandColor } from "@rms/api-client/brand-color"
+import { fetchBranding } from "@rms/api-client/branding"
+import { StaticBrandColor } from "@rms/api-client/brand-color"
+import { BACKEND_API_BASE } from "@/lib/server/backend-client"
+import { brandingHeaders } from "@/lib/tenant"
 import { navRoutePermissions } from "./nav-items"
 import { OperationalChrome } from "./operational-chrome"
 
 export default async function OperationalLayout({ children }: { children: React.ReactNode }) {
   // The real auth check — proxy.ts only did an optimistic cookie check.
-  const user = await getCurrentUser()
+  // Branding is fetched in parallel — independent of auth, no waterfall.
+  const [user, branding] = await Promise.all([
+    getCurrentUser(),
+    fetchBranding(BACKEND_API_BASE, await brandingHeaders()),
+  ])
 
   const pathname = (await headers()).get("x-pathname") ?? ""
 
@@ -22,7 +29,7 @@ export default async function OperationalLayout({ children }: { children: React.
 
   return (
     <QueryProvider persist>
-      <BrandColor />
+      <StaticBrandColor primaryColor={branding.primaryColor} />
       <CurrentUserProvider user={user}>
         <ActiveOutletProvider>
           <RealtimeInvalidationProvider />
