@@ -257,7 +257,7 @@ export default function KitchenPage() {
   const canManage = permissions.includes("kitchen-tickets.manage")
 
   const { outletId: effectiveOutletId, departmentId } = useActiveOutlet()
-  const isKitchenStaff = !isSuperadmin && (positionSlugs.includes("cook") || positionSlugs.includes("kitchen-helper"))
+  const isKitchenStaff = positionSlugs.includes("cook") || positionSlugs.includes("kitchen-helper")
 
   // Live clock driving the "…m ago" timers so they tick without a refetch.
   const [now, setNow] = useState(() => Date.now())

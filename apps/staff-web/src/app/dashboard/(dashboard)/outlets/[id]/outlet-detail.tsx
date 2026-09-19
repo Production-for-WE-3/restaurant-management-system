@@ -29,7 +29,8 @@ import { useCurrentUser } from "@/lib/auth/current-user-context"
 
 export function OutletDetail({ outletId }: { outletId: number }) {
   const router = useRouter()
-  const user = useCurrentUser()
+  const { permissions } = useCurrentUser()
+  const canManage = permissions.includes("outlets.manage")
   const { data: outlet, isLoading } = useOutlet(outletId)
   const showSkeleton = useDelayedLoading(isLoading)
   const updateOutlet = useUpdateOutlet(outletId)
@@ -76,7 +77,7 @@ export function OutletDetail({ outletId }: { outletId: number }) {
     <div className="max-w-2xl space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold">{outlet.name}</h1>
-        {user.isSuperadmin && <AlertDialog>
+        {canManage && <AlertDialog>
           <AlertDialogTrigger render={<Button variant="destructive">Delete</Button>} />
           <AlertDialogContent>
             <AlertDialogHeader>
@@ -101,7 +102,7 @@ export function OutletDetail({ outletId }: { outletId: number }) {
           <CardTitle>Details</CardTitle>
         </CardHeader>
         <CardContent>
-          {user.false ? <Form {...form}>
+          {canManage ? <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
                 control={form.control}

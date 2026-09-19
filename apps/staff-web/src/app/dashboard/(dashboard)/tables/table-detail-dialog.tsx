@@ -17,19 +17,20 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { useDeleteDiningTable, type DiningTable } from "@/hooks/use-dining-tables";
+import { useCurrentUser } from "@/lib/auth/current-user-context";
 import { DownloadableQrCode } from "./downloadable-qr-code";
 
 const GUEST_WEB_URL = process.env.NEXT_PUBLIC_GUEST_WEB_URL;
 
 export function TableDetailDialog({
 	table,
-	isSuperadmin = false,
 	onClose,
 }: {
 	table: DiningTable;
-	isSuperadmin?: boolean;
 	onClose: () => void;
 }) {
+	const { permissions } = useCurrentUser();
+	const canManage = permissions.includes("tables.manage");
 	const deleteTable = useDeleteDiningTable();
 
 	async function handleDelete() {
@@ -69,7 +70,7 @@ export function TableDetailDialog({
 						)}
 					</div>
 
-					{isSuperadmin && (
+					{canManage && (
 						<>
 							<Separator />
 							<AlertDialog>

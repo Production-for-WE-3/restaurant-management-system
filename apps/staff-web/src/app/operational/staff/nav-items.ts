@@ -101,7 +101,7 @@ export const staffRoutePermissions = [
 
 export function canSeeStaffNavItem(
   item: StaffNavItem,
-  user: { isSuperadmin: boolean; permissions: string[]; positionSlugs: string[] },
+  user: { permissions: string[]; positionSlugs: string[] },
 ): boolean {
   const hasRequiredPermission = hasRoutePermission(user, item.requires)
   const isExcluded =
@@ -112,9 +112,8 @@ export function canSeeStaffNavItem(
 /** Mirrors canSeeStaffNavItem's role exclusion for the server-side route guard in layout.tsx, which only has a pathname (not a resolved nav item) to work from. */
 export function isStaffRouteBlockedForRole(
   pathname: string,
-  user: { isSuperadmin: boolean; positionSlugs: string[] },
+  user: { positionSlugs: string[] },
 ): boolean {
-  if (user.isSuperadmin) return false
   return STAFF_NAV_ITEMS.some(
     (item) =>
       item.excludePositionSlugs?.some((slug) => user.positionSlugs.includes(slug)) &&

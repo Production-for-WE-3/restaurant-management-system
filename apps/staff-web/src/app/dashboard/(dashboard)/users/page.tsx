@@ -104,7 +104,6 @@ export default function UsersPage() {
         header: "Status",
         cell: ({ row }) => (
           <div className="flex gap-1">
-            {row.original.isSuperadmin && <Badge>superadmin</Badge>}
             <Badge variant={row.original.isActive ? "secondary" : "destructive"}>
               {row.original.isActive ? "active" : "inactive"}
             </Badge>

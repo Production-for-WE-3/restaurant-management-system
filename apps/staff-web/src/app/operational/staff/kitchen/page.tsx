@@ -29,7 +29,7 @@ const STAGE_FILTERS: { stage: TicketStage; label: string; dot: string }[] = [
 export default function StaffKitchenPage() {
   const { permissions, positionSlugs } = useCurrentUser()
   const canManage = permissions.includes("kitchen-tickets.manage")
-  const isKitchenStaff = !isSuperadmin && (positionSlugs.includes("cook") || positionSlugs.includes("kitchen-helper"))
+  const isKitchenStaff = positionSlugs.includes("cook") || positionSlugs.includes("kitchen-helper")
   const { outletId: effectiveOutletId, departmentId } = useActiveOutlet()
 
   const [now, setNow] = useState(() => Date.now())

@@ -53,9 +53,7 @@ export default function StaffProfilePage() {
       .finally(() => router.replace("/operational/staff/profile"))
   }, [router, searchParams])
 
-  const roleLabel = user.isSuperadmin
-    ? "Superadmin"
-    : user.positionSlugs.length > 0
+  const roleLabel = user.positionSlugs.length > 0
       ? user.positionSlugs.map(titleCase).join(", ")
       : "No role assigned"
 

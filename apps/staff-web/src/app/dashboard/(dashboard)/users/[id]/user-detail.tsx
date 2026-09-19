@@ -179,7 +179,7 @@ export function UserDetail({ userId }: { userId: number }) {
         </CardContent>
       </Card>
 
-      {isSuperadmin && (
+      {canManageUsers && (
         <Card>
           <CardHeader>
             <CardTitle>Reset password</CardTitle>
