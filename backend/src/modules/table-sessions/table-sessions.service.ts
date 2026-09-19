@@ -353,6 +353,15 @@ export class TableSessionsService {
     const members = await this.listCustomers(id);
     session.guestCount = Math.max(members.length, 1);
     saved = await this.tableSessionsRepository.save(session);
+    // A session being active should already imply the table is 'occupied',
+    // but staff can reset a table's status without ending its session
+    // (setStatus has no guard against that) — reconcile it here so a guest
+    // joining an already-open session doesn't get stuck seeing a stale
+    // 'available'/'cleaning'/'reserved' table.
+    const table = await this.diningTablesService.findOne(session.diningTableId);
+    if (table.status !== 'occupied') {
+      await this.diningTablesService.setStatus(session.diningTableId, 'occupied');
+    }
     // First time this session gets a customer of record — counts as one
     // dine-in visit. The no-op guard above means this only ever fires once
     // per session, even if more guests place orders on it afterwards.

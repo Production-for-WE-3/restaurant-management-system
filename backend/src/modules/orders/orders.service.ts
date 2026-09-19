@@ -668,16 +668,22 @@ export class OrdersService {
     // not just the first — new items always wait for staff to send them.
 
     */
-    const notification = await this.notificationsService.create({
-      outletId,
-      type: 'guest_order_placed',
-      title: existing ? 'Guest Order Updated' : 'New Guest Order',
-      body: `${tableName} ${existing ? 'added items to their order' : 'placed a new order'}`,
-      orderId: saved.id,
-      tableName,
-      data: JSON.stringify({ tableSessionId, diningTableId, customerId }),
-    });
-    this.gateway.notifyNotificationCreated(notification);
+    // Fire-and-forget: the guest's own response doesn't depend on staff's
+    // notification row existing yet, and NotificationsService.create's own
+    // external dispatch is already fire-and-forget internally — no reason to
+    // make the guest wait on this DB write too.
+    this.notificationsService
+      .create({
+        outletId,
+        type: 'guest_order_placed',
+        title: existing ? 'Guest Order Updated' : 'New Guest Order',
+        body: `${tableName} ${existing ? 'added items to their order' : 'placed a new order'}`,
+        orderId: saved.id,
+        tableName,
+        data: JSON.stringify({ tableSessionId, diningTableId, customerId }),
+      })
+      .then((notification) => this.gateway.notifyNotificationCreated(notification))
+      .catch((error) => this.logger.error(`Failed to create guest_order_placed notification: ${(error as Error).message}`));
 
     const full = await this.findOne(saved.id);
     this.gateway.notifyGuestOrderChanged(full);
@@ -1140,15 +1146,19 @@ export class OrdersService {
     for (const { ticketId, itemIds } of readyMade) {
       await this.kitchenTicketsService.notifyItemsReady(ticketId, itemIds);
     }
-    const notification = await this.notificationsService.create({
-      outletId: order.outletId,
-      type: 'order_sent',
-      title: `Order ${order.orderNumber} sent to kitchen`,
-      orderId: order.id,
-      actorUserId: changedBy,
-      data: JSON.stringify({ ticketCount: tickets.length }),
-    });
-    this.gateway.notifyNotificationCreated(notification);
+    // Fire-and-forget, same reasoning as createFromGuest's notification —
+    // sending to the kitchen shouldn't wait on this DB write.
+    this.notificationsService
+      .create({
+        outletId: order.outletId,
+        type: 'order_sent',
+        title: `Order ${order.orderNumber} sent to kitchen`,
+        orderId: order.id,
+        actorUserId: changedBy,
+        data: JSON.stringify({ ticketCount: tickets.length }),
+      })
+      .then((notification) => this.gateway.notifyNotificationCreated(notification))
+      .catch((error) => this.logger.error(`Failed to create order_sent notification: ${(error as Error).message}`));
     return tickets;
   }
 
@@ -1537,7 +1547,7 @@ export class OrdersService {
 
     if (!options.deferTotals) await this.recalculateTotals(orderId);
     try {
-      await this.recalculateReservations(saved.id);
+      await this.recalculateReservations(saved.id, order);
     } catch (error) {
       if (inserted) {
         // Fresh row — its ingredient requirement couldn't be reserved.
@@ -2157,7 +2167,7 @@ export class OrdersService {
    * `reservedQuantity` by the delta per ingredient; a positive delta can
    * throw (insufficient available stock).
    */
-  private async recalculateReservations(orderItemId: number): Promise<void> {
+  private async recalculateReservations(orderItemId: number, knownOrder?: Order): Promise<void> {
     const item = await this.findItem(orderItemId);
     const required = await this.resolveRequiredIngredients(item);
 
@@ -2171,7 +2181,11 @@ export class OrdersService {
       return;
     }
 
-    const order = await this.findOne(item.orderId);
+    // Reuse the caller's already-loaded order when available (addItem always
+    // has one) instead of re-fetching the same row — one fewer round trip on
+    // this DB's remote pooler (~150-200ms even warm) per item added.
+    const order =
+      knownOrder && knownOrder.id === item.orderId ? knownOrder : await this.findOne(item.orderId);
     const warehouse = await this.warehousesService.findDefaultForOutlet(
       order.outletId,
     );
