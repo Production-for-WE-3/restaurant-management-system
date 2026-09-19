@@ -29,6 +29,7 @@ import { CreateTableSessionDto } from '../table-sessions/dto/create-table-sessio
 import { OpenTableSessionDto } from '../table-sessions/dto/open-table-session.dto';
 import { TableSession } from '../table-sessions/entities/table-session.entity';
 import { FoodVariantsService } from '../food-variants/food-variants.service';
+import { Food } from '../foods/entities/food.entity';
 import { FoodsService } from '../foods/foods.service';
 import { IngredientsService } from '../ingredients/ingredients.service';
 import { isTrackableIngredientType } from '../ingredient-categories/ingredient-category-type.util';
@@ -39,6 +40,7 @@ import { KitchenTicketsGateway } from '../kitchen-tickets/kitchen-tickets.gatewa
 import { KitchenTicketsService } from '../kitchen-tickets/kitchen-tickets.service';
 import { LoyaltyService } from '../loyalty/loyalty.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OutletDepartment } from '../outlet-departments/entities/outlet-department.entity';
 import { OutletDepartmentsService } from '../outlet-departments/outlet-departments.service';
 import { OutletsService } from '../outlets/outlets.service';
 import { OrderPayment } from '../order-payments/entities/order-payment.entity';
@@ -643,9 +645,11 @@ export class OrdersService {
       );
     }
 
-    for (const item of items) {
-      await this.addItem(saved.id, item);
-    }
+    // Batched rather than one addItem() call per item: addItemsBatch defers
+    // recalculateTotals to a single pass after the whole cart lands, instead
+    // of recomputing the order's subtotal/grandTotal from scratch after each
+    // individual item (the N+1 that made multi-item guest carts slow).
+    await this.addItemsBatch(saved.id, items);
 
     // Guest checkout is an explicit "Place order" action, so send its new
     // items through the same authoritative kitchen-routing path as staff POS.
@@ -1386,32 +1390,50 @@ export class OrdersService {
    * order's outlet's matching prep-capable OutletDepartment. Never blocks
    * adding an item — falls back to null (no prep routing, ready-made) if the
    * food has no departmentType, or no matching department exists at this
-   * outlet.
+   * outlet. Pure (no I/O) — food/departments are already-fetched by the
+   * caller, which lets addItemsBatch fetch the outlet's department list once
+   * per batch instead of once per item.
    */
-  private async resolvePreparationDepartmentId(
-    outletId: number,
-    foodId: number,
-  ): Promise<number | null> {
-    const food = await this.foodsService.findOne(foodId);
+  private resolvePreparationDepartmentId(
+    food: Food,
+    departments: OutletDepartment[],
+  ): number | null {
     if (!food.departmentType) {
       return null;
     }
-    const departments =
-      await this.outletDepartmentsService.findByOutlet(outletId);
     const match = departments.find(
       (d) => d.type === food.departmentType && d.canPrepareOrder,
     );
     return match?.id ?? null;
   }
 
-  async addItem(orderId: number, dto: CreateOrderItemDto, options: { order?: Order; deferTotals?: boolean } = {}): Promise<OrderItem> {
+  async addItem(
+    orderId: number,
+    dto: CreateOrderItemDto,
+    options: {
+      order?: Order;
+      departments?: OutletDepartment[];
+      deferTotals?: boolean;
+    } = {},
+  ): Promise<OrderItem> {
     const order = options.order ?? await this.findOne(orderId);
-    await this.operatingHoursService.assertOperational(order.outletId);
     OrdersService.assertMutable(order);
 
-    const preparationDepartmentId = await this.resolvePreparationDepartmentId(
-      order.outletId,
-      dto.foodId,
+    // Independent lookups (none depends on another's result) fired together
+    // instead of chained — on this DB's remote pooler each round trip runs
+    // ~150-200ms even warm, so three sequential awaits here cost ~3x what
+    // running them concurrently does.
+    const [, food, departments] = await Promise.all([
+      this.operatingHoursService.assertOperational(order.outletId),
+      this.foodsService.findOne(dto.foodId),
+      options.departments
+        ? Promise.resolve(options.departments)
+        : this.outletDepartmentsService.findByOutlet(order.outletId),
+    ]);
+
+    const preparationDepartmentId = this.resolvePreparationDepartmentId(
+      food,
+      departments,
     );
 
     let unitPrice: number;
@@ -1428,9 +1450,12 @@ export class OrdersService {
       }
       unitPrice = price;
     } else {
+      // `food` is already fetched above — reused here instead of paying for
+      // resolvePriceForOutlet's own internal findOne() a second time.
       const { price } = await this.foodsService.resolvePriceForOutlet(
         dto.foodId,
         order.outletId,
+        food,
       );
       unitPrice = price;
     }
@@ -1477,10 +1502,16 @@ export class OrdersService {
     const order = await this.findOne(orderId);
     await this.operatingHoursService.assertOperational(order.outletId);
     OrdersService.assertMutable(order);
+    // Fetched once for the whole batch — every item in the same order shares
+    // the same outlet, so addItem() would otherwise re-fetch this identical
+    // list once per item.
+    const departments = await this.outletDepartmentsService.findByOutlet(
+      order.outletId,
+    );
     const saved: OrderItem[] = [];
     try {
       for (const { addons, ...itemDto } of items) {
-      const item = await this.addItem(orderId, itemDto, { order, deferTotals: true });
+      const item = await this.addItem(orderId, itemDto, { order, departments, deferTotals: true });
       for (const addon of addons ?? []) {
         await this.addItemAddon(item.id, addon);
       }
@@ -1961,70 +1992,88 @@ export class OrdersService {
    * ingredient's base unit. Foods/addons without isRecipeEnabled contribute
    * nothing — zero behavior change for the vast majority of the menu.
    */
+  /**
+   * Resolves one recipe row's ingredient + unit-conversion in parallel with
+   * every other row in the same list (each row's ingredient/unit lookup is
+   * independent of the others — only the final Map merge has to stay
+   * sequential), instead of one findOne+findConversionMultiplier pair per
+   * row awaited in a for-loop. On a remote DB where every round trip costs
+   * ~150-200ms even warm, a 3-ingredient recipe went from ~6 sequential
+   * queries to 2 rounds run concurrently.
+   */
+  private async accumulateRecipeContributions(
+    recipes: {
+      ingredientId: number;
+      unitId: number;
+      quantity: number;
+      wastageQuantity: number;
+    }[],
+    quantityMultiplier: number,
+    required: Map<number, number>,
+  ): Promise<void> {
+    const contributions = await Promise.all(
+      recipes.map(async (recipe) => {
+        const ingredient = await this.ingredientsService.findOne(
+          recipe.ingredientId,
+        );
+        if (!isTrackableIngredientType(ingredient.category.type)) {
+          return null;
+        }
+        const multiplier = await this.unitsService.findConversionMultiplier(
+          recipe.unitId,
+          ingredient.baseUnitId,
+        );
+        const qty = round4(
+          (recipe.quantity + recipe.wastageQuantity) *
+            multiplier *
+            quantityMultiplier,
+        );
+        return { ingredientId: recipe.ingredientId, qty };
+      }),
+    );
+    for (const contribution of contributions) {
+      if (!contribution) continue;
+      required.set(
+        contribution.ingredientId,
+        round4((required.get(contribution.ingredientId) ?? 0) + contribution.qty),
+      );
+    }
+  }
+
   private async resolveRequiredIngredients(
     item: OrderItem,
   ): Promise<Map<number, number>> {
     const required = new Map<number, number>();
 
-    const food = await this.foodsService.findOne(item.foodId);
+    const [food, itemAddons] = await Promise.all([
+      this.foodsService.findOne(item.foodId),
+      this.orderItemAddonsRepository.find({ where: { orderItemId: item.id } }),
+    ]);
+
     if (food.itemType === 'kitchen') {
       const recipes = await this.foodsService.resolveRecipes(
         item.foodId,
         item.foodVariantId,
       );
-      for (const recipe of recipes) {
-        const ingredient = await this.ingredientsService.findOne(
-          recipe.ingredientId,
-        );
-        if (!isTrackableIngredientType(ingredient.category.type)) {
-          continue;
-        }
-        const multiplier = await this.unitsService.findConversionMultiplier(
-          recipe.unitId,
-          ingredient.baseUnitId,
-        );
-        const qty = round4(
-          (recipe.quantity + recipe.wastageQuantity) *
-            multiplier *
-            item.quantity,
-        );
-        required.set(
-          recipe.ingredientId,
-          round4((required.get(recipe.ingredientId) ?? 0) + qty),
-        );
-      }
+      await this.accumulateRecipeContributions(recipes, item.quantity, required);
     }
 
-    const itemAddons = await this.orderItemAddonsRepository.find({
-      where: { orderItemId: item.id },
-    });
-    for (const itemAddon of itemAddons) {
-      const addon = await this.addonsService.findOne(itemAddon.addonId);
-      if (!addon.isRecipeEnabled) {
-        continue;
-      }
-      const recipes = await this.addonsService.resolveRecipes(addon.id);
-      for (const recipe of recipes) {
-        const ingredient = await this.ingredientsService.findOne(
-          recipe.ingredientId,
-        );
-        if (!isTrackableIngredientType(ingredient.category.type)) {
-          continue;
+    // Addon definitions + their recipes are resolved concurrently across
+    // addons (each addon's own recipe rows are independent of every other
+    // addon's), then merged into `required` one addon at a time.
+    const addonRecipeGroups = await Promise.all(
+      itemAddons.map(async (itemAddon) => {
+        const addon = await this.addonsService.findOne(itemAddon.addonId);
+        if (!addon.isRecipeEnabled) {
+          return { recipes: [], quantity: itemAddon.quantity };
         }
-        const multiplier = await this.unitsService.findConversionMultiplier(
-          recipe.unitId,
-          ingredient.baseUnitId,
-        );
-        const qty = round4(
-          (recipe.quantity + recipe.wastageQuantity) *
-            multiplier *
-            itemAddon.quantity,
-        );
-        required.set(
-          recipe.ingredientId,
-          round4((required.get(recipe.ingredientId) ?? 0) + qty),
-        );
-      }
+        const recipes = await this.addonsService.resolveRecipes(addon.id);
+        return { recipes, quantity: itemAddon.quantity };
+      }),
+    );
+    for (const { recipes, quantity } of addonRecipeGroups) {
+      if (recipes.length === 0) continue;
+      await this.accumulateRecipeContributions(recipes, quantity, required);
     }
 
     return required;
@@ -2111,62 +2160,89 @@ export class OrdersService {
     });
   }
 
-  /** On order completion: every reserved row posts sale_consume and becomes consumed. */
+  /**
+   * All still-`reserved` rows across every item on this order, in one
+   * batched pair of queries (item ids, then reservations for those ids)
+   * instead of one query-per-item — used by both consumeReservationsForOrder
+   * and releaseReservationsForOrder, which previously re-fetched the same
+   * way per item.
+   */
+  private async findReservedForOrder(
+    orderId: number,
+  ): Promise<OrderItemIngredientReservation[]> {
+    const items = await this.orderItemsRepository.find({
+      where: { orderId },
+    });
+    if (items.length === 0) return [];
+    return this.reservationsRepository.find({
+      where: {
+        orderItemId: In(items.map((item) => item.id)),
+        status: 'reserved',
+      },
+    });
+  }
+
+  /**
+   * On order completion: every reserved row posts sale_consume and becomes
+   * consumed — all in one transaction (was one dataSource.transaction() per
+   * reservation, each paying its own BEGIN/COMMIT round trip on top of the
+   * reserve+applyMovement+save queries).
+   */
   private async consumeReservationsForOrder(
     orderId: number,
     changedBy: number,
   ): Promise<void> {
-    const items = await this.orderItemsRepository.find({
-      where: { orderId },
-    });
-    for (const item of items) {
-      const reservations = await this.reservationsRepository.find({
-        where: { orderItemId: item.id, status: 'reserved' },
-      });
-      for (const reservation of reservations) {
-        await this.dataSource.transaction(async (manager) => {
-          await this.warehouseIngredientStocksService.reserve(
-            reservation.warehouseId,
-            reservation.ingredientId,
-            -reservation.reservedQuantity,
-            manager,
-          );
-          await this.warehouseIngredientStocksService.applyMovement({
-            warehouseId: reservation.warehouseId,
-            ingredientId: reservation.ingredientId,
-            quantityDelta: -reservation.reservedQuantity,
-            transactionType: 'sale_consume',
-            referenceType: 'order_item',
-            referenceId: reservation.orderItemId,
-            createdBy: changedBy,
-            manager,
-          });
-        });
-        reservation.consumedQuantity = reservation.reservedQuantity;
-        reservation.status = 'consumed';
-        await this.reservationsRepository.save(reservation);
-      }
-    }
-  }
-
-  /** On order cancellation: every reserved row releases with no ledger effect. */
-  private async releaseReservationsForOrder(orderId: number): Promise<void> {
-    const items = await this.orderItemsRepository.find({
-      where: { orderId },
-    });
-    for (const item of items) {
-      const reservations = await this.reservationsRepository.find({
-        where: { orderItemId: item.id, status: 'reserved' },
-      });
+    const reservations = await this.findReservedForOrder(orderId);
+    if (reservations.length === 0) return;
+    await this.dataSource.transaction(async (manager) => {
+      const reservationRepo = manager.getRepository(
+        OrderItemIngredientReservation,
+      );
       for (const reservation of reservations) {
         await this.warehouseIngredientStocksService.reserve(
           reservation.warehouseId,
           reservation.ingredientId,
           -reservation.reservedQuantity,
+          manager,
+        );
+        await this.warehouseIngredientStocksService.applyMovement({
+          warehouseId: reservation.warehouseId,
+          ingredientId: reservation.ingredientId,
+          quantityDelta: -reservation.reservedQuantity,
+          transactionType: 'sale_consume',
+          referenceType: 'order_item',
+          referenceId: reservation.orderItemId,
+          createdBy: changedBy,
+          manager,
+        });
+        reservation.consumedQuantity = reservation.reservedQuantity;
+        reservation.status = 'consumed';
+        await reservationRepo.save(reservation);
+      }
+    });
+  }
+
+  /**
+   * On order cancellation: every reserved row releases with no ledger effect
+   * — same single-transaction batching as consumeReservationsForOrder.
+   */
+  private async releaseReservationsForOrder(orderId: number): Promise<void> {
+    const reservations = await this.findReservedForOrder(orderId);
+    if (reservations.length === 0) return;
+    await this.dataSource.transaction(async (manager) => {
+      const reservationRepo = manager.getRepository(
+        OrderItemIngredientReservation,
+      );
+      for (const reservation of reservations) {
+        await this.warehouseIngredientStocksService.reserve(
+          reservation.warehouseId,
+          reservation.ingredientId,
+          -reservation.reservedQuantity,
+          manager,
         );
         reservation.status = 'released';
-        await this.reservationsRepository.save(reservation);
+        await reservationRepo.save(reservation);
       }
-    }
+    });
   }
 }

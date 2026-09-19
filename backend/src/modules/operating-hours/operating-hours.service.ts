@@ -1,9 +1,12 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
 } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
 import { InjectRepository } from '@nestjs/typeorm';
+import type { Cache } from 'cache-manager';
 import { Repository } from 'typeorm';
 import { AuditLogsService } from '../audit-logs/audit-logs.service';
 import { OutletAccessService } from '../auth/outlet-access.service';
@@ -11,6 +14,17 @@ import { SettingsService } from '../settings/settings.service';
 import { OutletOperatingHours } from './entities/outlet-operating-hours.entity';
 import { operationalRequestContext } from './operational-request-context';
 import { UpdateOperatingHoursDto } from './dto/update-operating-hours.dto';
+
+// assertOperational() runs on every single order-mutating call (create,
+// addItem, sendToKitchen, ...) — often several times per request (e.g. once
+// per item in a batch). A short cache keeps that from costing a fresh
+// ~150-200ms round trip to the DB every time; explicitly invalidated by
+// update() so a hours change still takes effect within one TTL window at
+// worst, never after a stale read.
+const CONFIG_CACHE_TTL_MS = 30_000;
+function configCacheKey(outletId: number): string {
+  return `operating-hours:config:${outletId}`;
+}
 
 export interface OperatingStatus {
   enabled: boolean;
@@ -98,10 +112,17 @@ export class OperatingHoursService {
     private readonly settingsService: SettingsService,
     private readonly outletAccess: OutletAccessService,
     private readonly auditLogs: AuditLogsService,
+    @Inject(CACHE_MANAGER) private readonly cache: Cache,
   ) {}
 
   async getConfig(outletId: number): Promise<OutletOperatingHours | null> {
-    return this.repo.findOne({ where: { outletId } });
+    const key = configCacheKey(outletId);
+    const cached = await this.cache.get<OutletOperatingHours | null>(key);
+    if (cached !== undefined) return cached;
+
+    const config = await this.repo.findOne({ where: { outletId } });
+    await this.cache.set(key, config, CONFIG_CACHE_TTL_MS);
+    return config;
   }
 
   async update(
@@ -139,7 +160,9 @@ export class OperatingHoursService {
       if (!validTimezone(config.timezone ?? ''))
         throw new BadRequestException('timezone must be a valid IANA timezone');
     }
-    return this.repo.save(config);
+    const saved = await this.repo.save(config);
+    await this.cache.del(configCacheKey(outletId));
+    return saved;
   }
 
   async getStatus(outletId: number): Promise<OperatingStatus> {

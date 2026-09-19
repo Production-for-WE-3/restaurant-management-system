@@ -13,7 +13,19 @@ describe('OperatingHoursService', () => {
     const settings = { get: jest.fn().mockResolvedValue({ timezone: 'Asia/Kathmandu' }) };
     const outletAccess = { canAccessOutlet: jest.fn().mockResolvedValue(true) };
     const auditLogs = { record: jest.fn().mockResolvedValue(undefined) };
-    return { service: new OperatingHoursService(repo as any, settings as any, outletAccess as any, auditLogs as any), repo, outletAccess, auditLogs };
+    const store = new Map<string, unknown>();
+    const cache = {
+      get: jest.fn((key: string) => Promise.resolve(store.get(key))),
+      set: jest.fn((key: string, value: unknown) => {
+        store.set(key, value);
+        return Promise.resolve();
+      }),
+      del: jest.fn((key: string) => {
+        store.delete(key);
+        return Promise.resolve();
+      }),
+    };
+    return { service: new OperatingHoursService(repo as any, settings as any, outletAccess as any, auditLogs as any, cache as any), repo, outletAccess, auditLogs, cache };
   };
 
   afterEach(() => jest.useRealTimers());

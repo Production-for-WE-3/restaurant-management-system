@@ -407,8 +407,9 @@ export class FoodsService {
   async resolvePriceForOutlet(
     foodId: number,
     outletId: number,
+    preloadedFood?: Food,
   ): Promise<{ food: Food; price: number }> {
-    const food = await this.findOne(foodId);
+    const food = preloadedFood ?? (await this.findOne(foodId));
     const override = await this.foodOutletsRepository.findOne({
       where: scopedWhere(this.tenantContext, { foodId, outletId }),
     });
