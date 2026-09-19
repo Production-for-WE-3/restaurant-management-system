@@ -98,20 +98,14 @@ export function BillReceipt({ orderId }: { orderId: number }) {
 
 /**
  * Display-only safety net: combines rows that represent the same line (same
- * food/variant/note/packaging, no addons attached) so a bill never prints
- * "1 × ButterToast" three times for what is really one 3-unit order. Rows
- * carrying addons are always kept separate — addons are attached per-row, so
- * merging them would misattribute which unit got which addon.
+ * food/variant/note/packaging) so a bill never prints "1 × ButterToast"
+ * three times for what is really one 3-unit order.
  */
 function groupBillItems(items: OrderItem[]): OrderItem[] {
   const merged: OrderItem[] = []
   const indexByKey = new Map<string, number>()
 
   for (const item of items) {
-    if (item.addons.length > 0) {
-      merged.push(item)
-      continue
-    }
     const key = [item.foodId, item.foodVariantId ?? "", item.note ?? "", item.packagingType].join("|")
     const existingIndex = indexByKey.get(key)
     if (existingIndex === undefined) {
@@ -123,6 +117,7 @@ function groupBillItems(items: OrderItem[]): OrderItem[] {
         ...existing,
         quantity: existing.quantity + item.quantity,
         totalAmount: existing.totalAmount + item.totalAmount,
+        addons: [...existing.addons, ...item.addons],
       }
     }
   }
