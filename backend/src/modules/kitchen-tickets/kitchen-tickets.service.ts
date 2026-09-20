@@ -582,6 +582,15 @@ export class KitchenTicketsService {
    * realtime.
    */
   async markOrderReadyItemsServed(orderId: number): Promise<KitchenTicket[]> {
+    // Checked up front, not left to the DB: without this, a "Deliver"
+    // tap on an order that got paid out and completed while items sat
+    // 'ready' (its waiter never tapped Deliver in time) reaches the
+    // orders_lock_completed trigger's raw UPDATE on order_items and comes
+    // back as an unhandled 500 instead of a clean 409 — see
+    // OrdersService#assertMutable, the same guard every other order-item
+    // mutation in orders.service.ts already goes through.
+    OrdersService.assertMutable(await this.ordersService.findOne(orderId));
+
     const eligible = await this.ticketItemsRepository
       .createQueryBuilder('ticketItem')
       .innerJoin('ticketItem.ticket', 'ticket')
@@ -644,6 +653,9 @@ export class KitchenTicketsService {
     orderId: number,
     ticketItemId: number,
   ): Promise<KitchenTicket> {
+    // Same reasoning as markOrderReadyItemsServed's guard above.
+    OrdersService.assertMutable(await this.ordersService.findOne(orderId));
+
     const item = await this.ticketItemsRepository
       .createQueryBuilder('ticketItem')
       .innerJoinAndSelect('ticketItem.ticket', 'ticket')
