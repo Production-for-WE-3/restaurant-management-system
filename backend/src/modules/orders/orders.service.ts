@@ -66,7 +66,7 @@ import { UpdateOrderDto } from './dto/update-order.dto';
 import { WaiterOrderItemResponseDto } from './dto/waiter-order-item-response.dto';
 import { OrderItemAddon } from './entities/order-item-addon.entity';
 import { OrderItemIngredientReservation } from './entities/order-item-ingredient-reservation.entity';
-import { OrderItem } from './entities/order-item.entity';
+import { OrderItem, type OrderItemPackagingType } from './entities/order-item.entity';
 import { OrderStatusHistory } from './entities/order-status-history.entity';
 import { Order } from './entities/order.entity';
 import type { OrderStatus } from './entities/order.entity';
@@ -1686,13 +1686,21 @@ export class OrdersService {
   }
 
   /**
-   * POS "Place order" pushes the whole local cart in one request instead of
-   * one round-trip per tap — same per-item work as addItem/addItemAddon
-   * (price snapshot + ingredient reservation), just looped server-side so
-   * the client only waits on one request. Not wrapped in a single DB
-   * transaction: matches createFromGuest's existing item-loop behavior,
-   * where an item that fails to reserve stock is rolled back individually
-   * (addItem already does this) while items already added stay added.
+   * POS "Place order" / guest checkout pushes the whole cart in one request.
+   * Genuinely batched, not just looped: addItem()/addItemAddon() each cost
+   * several sequential round trips (price resolution, the merge-upsert, a
+   * refetch), and on this DB's remote pooler every round trip runs
+   * ~150-200ms even warm — calling them once per cart line was the actual
+   * source of "place order" taking seconds. This resolves prices for every
+   * distinct food/variant in the cart in a fixed handful of queries
+   * (regardless of cart size), then writes every item and every addon as one
+   * multi-row INSERT each.
+   *
+   * Not wrapped in a single all-or-nothing DB transaction: matches the old
+   * per-item behavior, where a line that fails validation (bad food id,
+   * variant/food mismatch, unavailable at this outlet) doesn't take lines
+   * that already resolved fine down with it — the reservation pass after
+   * this is the one place a real transaction (and full rollback) applies.
    */
   async addItemsBatch(
     orderId: number,
@@ -1709,35 +1717,210 @@ export class OrdersService {
       this.operatingHoursService.assertOperational(order.outletId),
       this.outletDepartmentsService.findByOutlet(order.outletId),
     ]);
-    const saved: OrderItem[] = [];
+
+    let saved: OrderItem[] = [];
     try {
+      if (items.length === 0) return saved;
+
+      // Merge cart lines that would collide on the same upsert key up front
+      // — a single multi-row INSERT can never target one row twice
+      // (Postgres rejects that outright: "ON CONFLICT DO UPDATE command
+      // cannot affect row a second time"), where two sequential addItem()
+      // calls for the same key simply converge on it one at a time. This is
+      // the same merge those sequential calls already perform on each
+      // other, just done once, in JS, up front.
+      interface MergedLine {
+        foodId: number;
+        foodVariantId: number | null;
+        note: string | null;
+        packagingType: OrderItemPackagingType;
+        quantity: number;
+        addons: CreateOrderItemAddonDto[];
+      }
+      const mergedByKey = new Map<string, MergedLine>();
       for (const { addons, ...itemDto } of items) {
-      const item = await this.addItem(orderId, itemDto, { order, departments, deferTotals: true, deferReservations: true });
-      for (const addon of addons ?? []) {
-        await this.addItemAddon(item.id, addon, { order, deferTotals: true, deferReservations: true });
+        const key = `${itemDto.foodId}:${itemDto.foodVariantId ?? -1}:${itemDto.note ?? ''}:${itemDto.packagingType ?? 'plating'}`;
+        const existing = mergedByKey.get(key);
+        if (existing) {
+          existing.quantity += itemDto.quantity ?? 1;
+          existing.addons.push(...(addons ?? []));
+          continue;
+        }
+        mergedByKey.set(key, {
+          foodId: itemDto.foodId,
+          foodVariantId: itemDto.foodVariantId ?? null,
+          note: itemDto.note ?? null,
+          packagingType: itemDto.packagingType ?? 'plating',
+          quantity: itemDto.quantity ?? 1,
+          addons: [...(addons ?? [])],
+        });
       }
-      saved.push(item);
+      const lines = [...mergedByKey.values()];
+
+      const noVariantFoodIds = lines
+        .filter((line) => line.foodVariantId === null)
+        .map((line) => line.foodId);
+      const variantIds = lines
+        .filter((line): line is MergedLine & { foodVariantId: number } => line.foodVariantId !== null)
+        .map((line) => line.foodVariantId);
+
+      const [priceByFoodId, priceByVariantId] = await Promise.all([
+        this.foodsService.resolvePricesForOutlet(noVariantFoodIds, order.outletId),
+        this.foodVariantsService.resolvePricesForOutlet(variantIds, order.outletId),
+      ]);
+      // Variant lines still need their own Food row (department routing +
+      // the variant->food consistency check below) — resolvePricesForOutlet
+      // above only fetched foods for the no-variant lines, so batch whatever
+      // it didn't already cover instead of refetching everything.
+      const variantFoodIds = [
+        ...new Set(
+          lines
+            .filter((line) => line.foodVariantId !== null)
+            .map((line) => line.foodId),
+        ),
+      ];
+      const extraFoods = variantFoodIds.length
+        ? await this.foodsService.findByIds(variantFoodIds)
+        : [];
+      const foodById = new Map<number, Food>();
+      for (const { food } of priceByFoodId.values()) foodById.set(food.id, food);
+      for (const food of extraFoods) foodById.set(food.id, food);
+
+      const rows = lines.map((line) => {
+        const food = foodById.get(line.foodId);
+        if (!food) throw new NotFoundException(`Food ${line.foodId} not found`);
+
+        let unitPrice: number;
+        if (line.foodVariantId !== null) {
+          const resolved = priceByVariantId.get(line.foodVariantId);
+          if (!resolved) {
+            throw new NotFoundException(`Food variant ${line.foodVariantId} not found`);
+          }
+          if (resolved.variant.foodId !== line.foodId) {
+            throw new BadRequestException(
+              `Food variant ${line.foodVariantId} does not belong to food ${line.foodId}`,
+            );
+          }
+          unitPrice = resolved.price;
+        } else {
+          const resolved = priceByFoodId.get(line.foodId);
+          if (!resolved) throw new NotFoundException(`Food ${line.foodId} not found`);
+          unitPrice = resolved.price;
+        }
+
+        return {
+          line,
+          values: {
+            orderId,
+            tableSessionId: order.tableSessionId ?? null,
+            foodId: line.foodId,
+            foodVariantId: line.foodVariantId,
+            preparationDepartmentId: this.resolvePreparationDepartmentId(food, departments),
+            quantity: line.quantity,
+            unitPrice,
+            totalAmount: round2(line.quantity * unitPrice),
+            note: line.note,
+            packagingType: line.packagingType,
+          },
+        };
+      });
+
+      // One multi-row INSERT for every line in the cart, same merge-upsert
+      // semantics as addItem()'s single-row version (a re-add of an
+      // already-cart-staged line bumps its quantity instead of creating a
+      // second row) — see idx_order_items_merge_key.
+      const upsert = await this.orderItemsRepository
+        .createQueryBuilder()
+        .insert()
+        .into(OrderItem)
+        .values(rows.map((row) => row.values))
+        .onConflict(
+          `(order_id, food_id, (COALESCE(food_variant_id, -1)), (COALESCE(note, '')), packaging_type) ` +
+            `WHERE status = 'stock_reserved' AND is_held = false ` +
+            `DO UPDATE SET quantity = order_items.quantity + EXCLUDED.quantity, ` +
+            `total_amount = round((order_items.quantity + EXCLUDED.quantity) * order_items.unit_price, 2)`,
+        )
+        .returning('id, (xmax = 0) AS inserted')
+        .execute();
+      // Postgres preserves the VALUES-list order in RETURNING for a
+      // multi-row INSERT, ON CONFLICT included — each source row produces
+      // exactly one output row, in order — so this positional zip with
+      // `rows` is safe.
+      //
+      // `id` comes back as a string here — this is a raw driver result, not
+      // an entity, so none of OrderItem's column transformers ran. Every
+      // `bigint` column in this codebase comes back from `pg` as a string by
+      // default (see BigIntTransformer), and OrderItem.id normally goes
+      // through that transformer to become a plain number; parseInt matches
+      // it exactly so ids compare equal to the numbers `orderItemsRepository
+      // .find()` returns below, instead of silently missing every Map
+      // lookup keyed by them.
+      const upsertResults = (upsert.raw as { id: string; inserted: boolean }[]).map(
+        (row) => ({ id: parseInt(row.id, 10), inserted: row.inserted }),
+      );
+
+      // Every addon across every line, as one more multi-row INSERT.
+      // Deliberately not merged/deduped like the items above — two lines
+      // requesting the same addon on the same food always produced two
+      // separate order_item_addon rows before, and still do here.
+      const distinctAddonIds = [
+        ...new Set(rows.flatMap((row) => row.line.addons.map((addon) => addon.addonId))),
+      ];
+      const addonById = distinctAddonIds.length
+        ? new Map((await this.addonsService.findByIds(distinctAddonIds)).map((addon) => [addon.id, addon]))
+        : new Map();
+      const addonRows = rows.flatMap((row, index) => {
+        const orderItemId = upsertResults[index].id;
+        return row.line.addons.map((addonDto) => {
+          const addon = addonById.get(addonDto.addonId);
+          if (!addon) throw new NotFoundException(`Addon ${addonDto.addonId} not found`);
+          const quantity = addonDto.quantity ?? 1;
+          return {
+            orderItemId,
+            addonId: addon.id,
+            quantity,
+            unitPrice: addon.price,
+            totalAmount: round2(quantity * addon.price),
+          };
+        });
+      });
+      if (addonRows.length > 0) {
+        await this.orderItemAddonsRepository.insert(addonRows);
       }
+
+      // One batched read back instead of addItem()'s per-row findItem() —
+      // the POS "add items" endpoint returns this array directly to the
+      // client, so it still needs full entities, just fetched once.
+      const itemIds = upsertResults.map((result) => result.id);
+      const itemById = new Map(
+        (await this.orderItemsRepository.find({ where: { id: In(itemIds) } })).map(
+          (item) => [item.id, item],
+        ),
+      );
+      saved = itemIds.map((id) => itemById.get(id)!);
+
       // One transaction for the entire cart rather than one per item plus one
       // per addon. Each of those took FOR UPDATE locks on the same stock rows
       // and cost a full round trip to a remote pooler, which is what made
       // placing a guest order take seconds. Deferred to here (rather than
       // interleaved) so a cart that can't be stocked fails as a unit and
       // rolls the whole reservation set back with it.
-      // Accumulated, not assigned: the merge-on-add upsert can fold two cart
-      // lines into one row, and that row must give back both quantities.
-      const addedQuantities = new Map<number, number>();
-      items.forEach((item, index) => {
-        const id = saved[index].id;
-        addedQuantities.set(id, (addedQuantities.get(id) ?? 0) + (item.quantity ?? 1));
-      });
-      // Deduped for the same reason: recalculateReservations is a full
-      // recompute, so a merged row only needs one pass.
-      const undoTargets = [...new Map(saved.map((item) => [item.id, item])).values()];
+      // rows/saved are already 1:1 with unique upsert keys (that's exactly
+      // what the merge step above guaranteed), so unlike the old per-item
+      // loop there's nothing left to dedupe here — each saved row's own
+      // line.quantity is exactly what this batch contributed to it.
+      const addedQuantities = new Map(
+        rows.map((row, index) => [saved[index].id, row.line.quantity]),
+      );
       try {
         await this.dataSource.transaction(async (manager) => {
-          for (const item of undoTargets) {
-            await this.recalculateReservations(item.id, order, undefined, manager);
+          for (const item of saved) {
+            // foodById was already populated resolving prices above, and
+            // `item` itself came from the batched read-back — reuse both
+            // instead of paying for resolveRequiredIngredients' own
+            // foodsService.findOne() and this function's own findItem()
+            // a second time per item.
+            await this.recalculateReservations(item.id, order, foodById.get(item.foodId), manager, item);
           }
         });
       } catch (error) {
@@ -1746,7 +1929,7 @@ export class OrdersService {
         // exactly what was added — the merge-on-add upsert means a row may
         // predate this batch, and dropping it wholesale would take an
         // earlier round's quantity with it.
-        for (const item of undoTargets) {
+        for (const item of saved) {
           const added = addedQuantities.get(item.id) ?? 0;
           const remaining = round2(item.quantity - added);
           if (remaining > 0) {
@@ -2348,8 +2531,9 @@ export class OrdersService {
     knownOrder?: Order,
     knownFood?: Food,
     sharedManager?: EntityManager,
+    knownItem?: OrderItem,
   ): Promise<void> {
-    const item = await this.findItem(orderItemId);
+    const item = knownItem ?? (await this.findItem(orderItemId));
     const required = await this.resolveRequiredIngredients(item, knownFood);
 
     const existing = await this.reservationsRepository.find({
