@@ -69,6 +69,33 @@ export class GuestTableSessionsController {
     }
   }
 
+  /**
+   * Called on QR scan, before any sign-in. Opens (or reuses) the table's
+   * session so the floor shows it occupied the moment someone sits down.
+   * Returns only the table's own identity — never the party list, since an
+   * anonymous caller holding a table code must not be able to read who is
+   * sitting there.
+   */
+  @Post('scan')
+  @ApiOperation({
+    summary:
+      "Marks the table occupied on QR scan, opening a session if it has none. No sign-in required; the guest is attached to it later when they order or call staff.",
+  })
+  async scan(@Body() dto: JoinTableSessionDto) {
+    const tableCode = this.requireTableCode(dto.tableCode);
+    const table = await this.diningTables.findByCode(tableCode);
+    const session = await this.tableSessions.ensureActiveForScan(
+      table.id,
+      table.outletId,
+    );
+    const detail = await this.tableSessions.findOneDetailed(session.id);
+    return {
+      id: detail.id,
+      outletName: detail.outletName,
+      diningTableName: detail.diningTableName,
+    };
+  }
+
   @Post('join')
   @ApiOperation({
     summary:

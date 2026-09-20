@@ -376,6 +376,27 @@ export class TableSessionsService {
    * Guarantees a guest interacting with a table is always tied to a session,
    * and that session is always tied to a phone-verified customer.
    */
+  /**
+   * Scan-time occupancy: reuses the table's open session, or opens one with
+   * no customer of record yet. Deliberately does NOT require a verified
+   * customer — a diner who has just scanned the QR hasn't entered a phone
+   * number, and making the table wait until checkout meant it read as
+   * 'available' to staff while people were sitting at it.
+   *
+   * The customer is attached later by ensureActiveForGuest() via
+   * attachCustomerIfMissing() (ordering, calling staff), which is also what
+   * counts the dine-in visit — so nothing is double-counted by opening the
+   * session early.
+   */
+  async ensureActiveForScan(
+    diningTableId: number,
+    outletId: number,
+  ): Promise<TableSession> {
+    const existing = await this.findActiveForTable(diningTableId);
+    if (existing) return existing;
+    return this.create({ outletId, diningTableId, source: 'qr_order' }, null);
+  }
+
   async ensureActiveForGuest(
     diningTableId: number,
     outletId: number,

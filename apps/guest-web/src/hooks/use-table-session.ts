@@ -37,6 +37,7 @@ export function useTableSession(tableCode: string | null) {
   const key = ["table-session", tableCode, token];
   const [joinedToken, setJoinedToken] = useState<string | null>(null);
   const joiningRef = useRef(false);
+  const scannedRef = useRef(false);
   const joined = !!token && joinedToken === token;
 
   // One write on entry: attach this verified guest to the table's session
@@ -55,6 +56,19 @@ export function useTableSession(tableCode: string | null) {
       setJoinedToken(token);
     },
   });
+
+  // Occupy the table the moment the QR is scanned, before any sign-in — the
+  // join below needs a verified customer, which a diner doesn't have until
+  // checkout, so gating occupancy on it left tables reading 'available' to
+  // staff while people were sitting at them.
+  useEffect(() => {
+    if (!tableCode || scannedRef.current) return;
+    scannedRef.current = true;
+    void authFetch(`/table-sessions/guest/scan`, {
+      method: "POST",
+      body: JSON.stringify({ tableCode }),
+    }).catch(() => undefined);
+  }, [tableCode]);
 
   useEffect(() => {
     if (!tableCode || !token || joined || joiningRef.current) return;

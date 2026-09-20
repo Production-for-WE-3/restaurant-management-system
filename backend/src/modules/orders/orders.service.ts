@@ -1172,12 +1172,25 @@ export class OrdersService {
     // KitchenTicketsService.startTicket -> syncStatusFromItems), not merely
     // because staff sent it to the kitchen queue.
     await this.maybeAdvanceToServed(order.id, changedBy);
-    if (kitchenBound.length > 0) {
-      await this.kitchenTicketsService.notifyTicketsCreated(kitchenBound);
-    }
-    for (const { ticketId, itemIds } of readyMade) {
-      await this.kitchenTicketsService.notifyItemsReady(ticketId, itemIds);
-    }
+    // Fire-and-forget: both are pure broadcast — a relation-heavy refetch per
+    // ticket so the KDS gets a fully hydrated payload, then a notification
+    // per ready-made group. The tickets are already committed, and every
+    // listener also refetches on the push, so making the guest wait on this
+    // only added latency to "Place order" for no correctness gain.
+    void (async () => {
+      try {
+        if (kitchenBound.length > 0) {
+          await this.kitchenTicketsService.notifyTicketsCreated(kitchenBound);
+        }
+        for (const { ticketId, itemIds } of readyMade) {
+          await this.kitchenTicketsService.notifyItemsReady(ticketId, itemIds);
+        }
+      } catch (error) {
+        this.logger.error(
+          `Failed to push kitchen updates for order ${order.id}: ${(error as Error).message}`,
+        );
+      }
+    })();
     // Only announce "sent to kitchen" when something actually went to a
     // kitchen station — a send that's entirely ready-made items never
     // touches the kitchen, and notifyItemsReady above already alerts the
@@ -1553,6 +1566,8 @@ export class OrdersService {
       order?: Order;
       departments?: OutletDepartment[];
       deferTotals?: boolean;
+      /** Caller runs the recompute itself once the whole batch has landed. */
+      deferReservations?: boolean;
     } = {},
   ): Promise<OrderItem> {
     const order = options.order ?? await this.findOne(orderId);
@@ -1640,6 +1655,7 @@ export class OrdersService {
     const saved = await this.findItem(id);
 
     if (!options.deferTotals) await this.recalculateTotals(orderId);
+    if (options.deferReservations) return saved;
     try {
       await this.recalculateReservations(saved.id, order, food);
     } catch (error) {
@@ -1685,11 +1701,52 @@ export class OrdersService {
     const saved: OrderItem[] = [];
     try {
       for (const { addons, ...itemDto } of items) {
-      const item = await this.addItem(orderId, itemDto, { order, departments, deferTotals: true });
+      const item = await this.addItem(orderId, itemDto, { order, departments, deferTotals: true, deferReservations: true });
       for (const addon of addons ?? []) {
-        await this.addItemAddon(item.id, addon, { order, deferTotals: true });
+        await this.addItemAddon(item.id, addon, { order, deferTotals: true, deferReservations: true });
       }
       saved.push(item);
+      }
+      // One transaction for the entire cart rather than one per item plus one
+      // per addon. Each of those took FOR UPDATE locks on the same stock rows
+      // and cost a full round trip to a remote pooler, which is what made
+      // placing a guest order take seconds. Deferred to here (rather than
+      // interleaved) so a cart that can't be stocked fails as a unit and
+      // rolls the whole reservation set back with it.
+      // Accumulated, not assigned: the merge-on-add upsert can fold two cart
+      // lines into one row, and that row must give back both quantities.
+      const addedQuantities = new Map<number, number>();
+      items.forEach((item, index) => {
+        const id = saved[index].id;
+        addedQuantities.set(id, (addedQuantities.get(id) ?? 0) + (item.quantity ?? 1));
+      });
+      // Deduped for the same reason: recalculateReservations is a full
+      // recompute, so a merged row only needs one pass.
+      const undoTargets = [...new Map(saved.map((item) => [item.id, item])).values()];
+      try {
+        await this.dataSource.transaction(async (manager) => {
+          for (const item of undoTargets) {
+            await this.recalculateReservations(item.id, order, undefined, manager);
+          }
+        });
+      } catch (error) {
+        // The transaction already rolled back every stock/reservation write,
+        // so only the item rows this batch added are left to undo. Subtract
+        // exactly what was added — the merge-on-add upsert means a row may
+        // predate this batch, and dropping it wholesale would take an
+        // earlier round's quantity with it.
+        for (const item of undoTargets) {
+          const added = addedQuantities.get(item.id) ?? 0;
+          const remaining = round2(item.quantity - added);
+          if (remaining > 0) {
+            item.quantity = remaining;
+            item.totalAmount = round2(remaining * item.unitPrice);
+            await this.orderItemsRepository.save(item);
+          } else {
+            await this.orderItemsRepository.remove(item);
+          }
+        }
+        throw error;
       }
       await this.recalculateTotals(orderId);
       return saved;
@@ -1824,7 +1881,11 @@ export class OrdersService {
   async addItemAddon(
     orderItemId: number,
     dto: CreateOrderItemAddonDto,
-    options: { order?: Order; deferTotals?: boolean } = {},
+    options: {
+      order?: Order;
+      deferTotals?: boolean;
+      deferReservations?: boolean;
+    } = {},
   ): Promise<OrderItemAddon> {
     const item = await this.findItem(orderItemId);
     const order = options.order ?? (await this.findOne(item.orderId));
@@ -1844,6 +1905,11 @@ export class OrdersService {
     );
 
     if (!options.deferTotals) await this.recalculateTotals(item.orderId);
+    // recalculateReservations is a *full* recompute of the item, not a delta,
+    // so a batch caller adding several addons to the same item gets an
+    // identical result from one pass afterwards — the per-addon runs were
+    // pure duplicated work (a transaction and a row lock each).
+    if (options.deferReservations) return saved;
     try {
       await this.recalculateReservations(orderItemId, order);
     } catch (error) {
@@ -2266,7 +2332,12 @@ export class OrdersService {
    * `reservedQuantity` by the delta per ingredient; a positive delta can
    * throw (insufficient available stock).
    */
-  private async recalculateReservations(orderItemId: number, knownOrder?: Order, knownFood?: Food): Promise<void> {
+  private async recalculateReservations(
+    orderItemId: number,
+    knownOrder?: Order,
+    knownFood?: Food,
+    sharedManager?: EntityManager,
+  ): Promise<void> {
     const item = await this.findItem(orderItemId);
     const required = await this.resolveRequiredIngredients(item, knownFood);
 
@@ -2292,7 +2363,11 @@ export class OrdersService {
       existing.map((reservation) => [reservation.ingredientId, reservation]),
     );
 
-    await this.dataSource.transaction(async (manager) => {
+    // A caller adding a whole cart passes its own manager so every item's
+    // diff lands in one transaction: each `reserve()` takes a FOR UPDATE row
+    // lock, and on this DB's remote pooler a transaction per item (plus one
+    // per addon) was the single largest cost in placing an order.
+    const apply = async (manager: EntityManager) => {
       const reservationRepo = manager.getRepository(
         OrderItemIngredientReservation,
       );
@@ -2340,7 +2415,13 @@ export class OrdersService {
           );
         }
       }
-    });
+    };
+
+    if (sharedManager) {
+      await apply(sharedManager);
+      return;
+    }
+    await this.dataSource.transaction(apply);
   }
 
   /**
