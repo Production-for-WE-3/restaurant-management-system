@@ -1912,9 +1912,34 @@ export class OrdersService {
       const addedQuantities = new Map(
         rows.map((row, index) => [saved[index].id, row.line.quantity]),
       );
+      // Most menu items aren't recipe-tracked and most cart lines carry no
+      // addons — for those, the whole recalculateReservations call is just
+      // two empty lookups (its own addons, its own existing reservations)
+      // before it returns having done nothing. Batch those two lookups for
+      // the WHOLE cart in one query each instead of paying for them per
+      // item, and skip the real per-item pipeline entirely for anything
+      // that comes back with nothing on either side — a food that isn't
+      // recipe-enabled and has no addons and nothing already reserved has
+      // no possible reservation to make.
+      const savedItemIds = saved.map((item) => item.id);
+      const [allAddons, allExisting] = await Promise.all([
+        this.orderItemAddonsRepository.find({ where: { orderItemId: In(savedItemIds) } }),
+        this.reservationsRepository.find({ where: { orderItemId: In(savedItemIds), status: 'reserved' } }),
+      ]);
+      const itemIdsWithAddons = new Set(allAddons.map((addon) => addon.orderItemId));
+      const itemIdsWithExisting = new Set(allExisting.map((reservation) => reservation.orderItemId));
+      const itemsNeedingReservationWork = saved.filter((item) => {
+        const food = foodById.get(item.foodId);
+        return (
+          food?.itemType === 'kitchen' ||
+          itemIdsWithAddons.has(item.id) ||
+          itemIdsWithExisting.has(item.id)
+        );
+      });
+
       try {
         await this.dataSource.transaction(async (manager) => {
-          for (const item of saved) {
+          for (const item of itemsNeedingReservationWork) {
             // foodById was already populated resolving prices above, and
             // `item` itself came from the batched read-back — reuse both
             // instead of paying for resolveRequiredIngredients' own
