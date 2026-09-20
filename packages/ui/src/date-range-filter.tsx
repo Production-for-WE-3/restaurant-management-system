@@ -50,9 +50,9 @@ export function DateRangeFilter({
   showQuickRanges?: boolean
 }) {
   return (
-    <div className={showQuickRanges ? "space-y-2" : undefined}>
+    <div className={showQuickRanges ? "flex items-center gap-2" : undefined}>
       {showQuickRanges && (
-        <div className="flex flex-wrap gap-1" aria-label="Quick date ranges">
+        <div className="flex items-center gap-1" aria-label="Quick date ranges">
           {(["today", "yesterday", "week"] as const).map((range) => {
             const nextRange = quickRange(range)
             const label = range === "week" ? "Last 7 days" : range[0].toUpperCase() + range.slice(1)
