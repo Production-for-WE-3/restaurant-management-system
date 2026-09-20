@@ -290,6 +290,37 @@ export class KitchenTicketsService {
     }
   }
 
+  /**
+   * Closes out every still-open ticket for an order once the order itself
+   * completes — otherwise a paid, closed sale whose waiter never tapped
+   * "Deliver" on its last ready item(s) leaves a phantom entry on the KDS
+   * board and the ready queue forever: recomputeTicketStatusOnly only
+   * closes a ticket once every item reads 'served'/'cancelled', and once an
+   * order is 'completed' its order_items are frozen by the
+   * orders_lock_completed DB trigger, so that item can never reach 'served'
+   * through the normal flow again.
+   *
+   * Deliberately does NOT touch order_items — unlike cancelTicket(), which
+   * cancels the still-live lines of a sale nobody's paying for. Here the
+   * sale already happened; whatever an item's status was at completion
+   * (typically 'ready', occasionally still 'preparing') is left exactly as
+   * is, as the true historical record. Only the ticket's own bookkeeping
+   * closes, which is a plain `kitchen_tickets` write the trigger doesn't
+   * touch at all — that table isn't one of the ones it locks.
+   */
+  async closeAllForOrder(orderId: number): Promise<void> {
+    const tickets = await this.ticketsRepository.find({
+      where: { orderId, status: In(['open', 'in_progress']) },
+    });
+    const now = new Date();
+    for (const ticket of tickets) {
+      ticket.status = 'completed';
+      ticket.servedAt ??= now;
+      const saved = await this.ticketsRepository.save(ticket);
+      this.gateway.notifyTicketUpdated(await this.toPushPayload(saved.id));
+    }
+  }
+
   async cancelTicket(ticketId: number): Promise<KitchenTicket> {
     const ticket = await this.findOne(ticketId);
     const items = await this.ticketItemsRepository.find({

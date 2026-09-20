@@ -916,6 +916,11 @@ export class OrdersService {
     if (dto.status === 'completed') {
       await this.consumeReservationsForOrder(id, changedBy as number);
       await this.freeTableForCompletedOrder(saved, changedBy as number);
+      // See KitchenTicketsService#closeAllForOrder — without this, an order
+      // paid out while a ready item's "Deliver" tap never happened leaves
+      // that ticket permanently stuck open, since order_items are now
+      // frozen and can never reach 'served' to close it naturally.
+      await this.kitchenTicketsService.closeAllForOrder(id);
     } else if (dto.status === 'served' && fromStatus !== 'served') {
       // Closes the loop the waiter-facing push flow needs: placed
       // (order_sent) -> ready (kitchen_ready) -> served. Fires once, on the
