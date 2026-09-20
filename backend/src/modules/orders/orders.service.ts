@@ -1158,19 +1158,26 @@ export class OrdersService {
     for (const { ticketId, itemIds } of readyMade) {
       await this.kitchenTicketsService.notifyItemsReady(ticketId, itemIds);
     }
-    // Fire-and-forget, same reasoning as createFromGuest's notification —
-    // sending to the kitchen shouldn't wait on this DB write.
-    this.notificationsService
-      .create({
-        outletId: order.outletId,
-        type: 'order_sent',
-        title: `Order ${order.orderNumber} sent to kitchen`,
-        orderId: order.id,
-        actorUserId: changedBy,
-        data: JSON.stringify({ ticketCount: tickets.length }),
-      })
-      .then((notification) => this.gateway.notifyNotificationCreated(notification))
-      .catch((error) => this.logger.error(`Failed to create order_sent notification: ${(error as Error).message}`));
+    // Only announce "sent to kitchen" when something actually went to a
+    // kitchen station — a send that's entirely ready-made items never
+    // touches the kitchen, and notifyItemsReady above already alerts the
+    // waiter directly, so a redundant/misleading "sent to kitchen" here
+    // would just be noise (and a duplicate sound) on top of that.
+    if (kitchenBound.length > 0) {
+      // Fire-and-forget, same reasoning as createFromGuest's notification —
+      // sending to the kitchen shouldn't wait on this DB write.
+      this.notificationsService
+        .create({
+          outletId: order.outletId,
+          type: 'order_sent',
+          title: `Order ${order.orderNumber} sent to kitchen`,
+          orderId: order.id,
+          actorUserId: changedBy,
+          data: JSON.stringify({ ticketCount: tickets.length }),
+        })
+        .then((notification) => this.gateway.notifyNotificationCreated(notification))
+        .catch((error) => this.logger.error(`Failed to create order_sent notification: ${(error as Error).message}`));
+    }
     return tickets;
   }
 
