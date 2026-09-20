@@ -3,6 +3,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { DiningTablesService } from '../dining-tables/dining-tables.service';
+import { OutletsService } from '../outlets/outlets.service';
 import { JoinTableSessionDto } from './dto/guest-table-session.dto';
 import { TableSessionsService } from './table-sessions.service';
 
@@ -27,6 +28,7 @@ export class GuestTableScanController {
   constructor(
     private readonly tableSessions: TableSessionsService,
     private readonly diningTables: DiningTablesService,
+    private readonly outlets: OutletsService,
   ) {}
 
   /**
@@ -49,15 +51,17 @@ export class GuestTableScanController {
       throw new BadRequestException('tableCode is required');
     }
     const table = await this.diningTables.findByCode(dto.tableCode);
-    const session = await this.tableSessions.ensureActiveForScan(
-      table.id,
-      table.outletId,
-    );
+    const [session, outlet] = await Promise.all([
+      this.tableSessions.ensureActiveForScan(table.id, table.outletId),
+      this.outlets.findOne(table.outletId),
+    ]);
     const detail = await this.tableSessions.findOneDetailed(session.id);
     return {
       id: detail.id,
       outletName: detail.outletName,
       diningTableName: detail.diningTableName,
+      qrOrderingMode: outlet.qrOrderingMode,
+      qrAccessCheckMode: outlet.qrAccessCheckMode,
     };
   }
 }

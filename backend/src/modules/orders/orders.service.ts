@@ -606,7 +606,7 @@ export class OrdersService {
   async createFromGuest(
     outletId: number,
     tableSessionId: number,
-    customerId: number,
+    customerId: number | null,
     items: CreateOrderItemDto[],
     diningTableId: number,
     tableName: string,
