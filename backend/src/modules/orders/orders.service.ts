@@ -670,6 +670,12 @@ export class OrdersService {
       .create({
         outletId,
         type: 'guest_order_placed',
+        // Urgent: this is the one event a staff member must not miss even
+        // with the app backgrounded — it's the only thing that unlocks push
+        // (see PushService#sendToUser's priority gate). A busy floor with
+        // the tab out of focus is exactly when a guest order is likely to
+        // sit unseen otherwise.
+        priority: 'urgent',
         title: existing ? 'Guest Order Updated' : 'New Guest Order',
         body: `${tableName} ${existing ? 'added items to their order' : 'placed a new order'}`,
         orderId: saved.id,

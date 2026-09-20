@@ -691,6 +691,12 @@ export class KitchenTicketsService {
       .create({
         outletId: ticket.outletId,
         type: 'kitchen_ready',
+        // Urgent: food sitting under the pass loses quality by the minute,
+        // and the waiter who needs to grab it may not be looking at a
+        // screen — this is the other event push exists for (see
+        // PushService#sendToUser's priority gate, and guest_order_placed's
+        // matching comment above in orders.service.ts).
+        priority: 'urgent',
         title: `${tableName} — items ready`,
         body,
         tableName,
