@@ -92,20 +92,45 @@ export class OrderItemsController {
     return this.ordersService.listItems(query);
   }
 
+  /**
+   * The canonical status read. Pass orderId for one order (works for
+   * grab-and-go too, which has no session) or tableSessionId for the whole
+   * visit rolled up across its orders.
+   */
   @Get('status-counts')
   @RequirePermissions('orders.view')
   @ApiOperation({
     summary:
-      "Per-food kitchen-pipeline counts (ordered/preparing/ready/served/cancelled) for a table session's whole visit — a rollup kept in sync by a DB trigger, not computed on request.",
+      'Per-food/variant kitchen-pipeline counts (reserved/ordered/preparing/ready/served/cancelled) for an order, or for a table session\'s whole visit — read from table_session_food_status_counts, a rollup kept in sync by a DB trigger rather than computed on request.',
   })
   async statusCounts(
-    @Query('tableSessionId', ParseIntPipe) tableSessionId: number,
     @CurrentUser() user: User,
+    @Query('orderId') orderId?: string,
+    @Query('tableSessionId') tableSessionId?: string,
   ) {
-    await this.assertTableSessionAccess(tableSessionId, user);
-    return this.ordersService.listFoodStatusCountsForTableSession(
-      tableSessionId,
-    );
+    if ((orderId === undefined) === (tableSessionId === undefined)) {
+      throw new BadRequestException(
+        'Pass exactly one of orderId or tableSessionId',
+      );
+    }
+
+    if (orderId !== undefined) {
+      const id = Number(orderId);
+      if (!Number.isInteger(id) || id <= 0) {
+        throw new BadRequestException('orderId must be a positive integer');
+      }
+      await this.assertOrderAccess(id, user);
+      return this.ordersService.listFoodStatusCountsForOrder(id);
+    }
+
+    const sessionId = Number(tableSessionId);
+    if (!Number.isInteger(sessionId) || sessionId <= 0) {
+      throw new BadRequestException(
+        'tableSessionId must be a positive integer',
+      );
+    }
+    await this.assertTableSessionAccess(sessionId, user);
+    return this.ordersService.listFoodStatusCountsForTableSession(sessionId);
   }
 
   @Get(':id')

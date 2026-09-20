@@ -6,18 +6,22 @@ import { io } from "socket.io-client";
 import { authFetch } from "@/lib/api";
 import { useGuestAuth } from "./use-guest-auth";
 import { publicQueryKeys } from "@rms/api-client/query-keys";
+import type { FoodStatusCount } from "@/lib/order-status";
 
 export interface GuestOrderItem {
   id: number;
+  foodId: number;
+  foodVariantId: number | null;
   quantity: number;
   unitPrice: number;
   totalAmount: number;
-  status: string;
   isHeld: boolean;
   note: string | null;
   cancelReason: string | null;
   food: { name: string } | null;
   foodVariant: { name: string } | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface GuestOrder {
@@ -26,6 +30,12 @@ export interface GuestOrder {
   status: string;
   grandTotal: number;
   items: GuestOrderItem[];
+  /**
+   * Per food+variant kitchen progress, straight from
+   * table_session_food_status_counts. Item rows carry the bill detail
+   * (price, note, held); how far along the food is comes from here.
+   */
+  foodStatusCounts: FoodStatusCount[];
   createdAt: string;
 }
 

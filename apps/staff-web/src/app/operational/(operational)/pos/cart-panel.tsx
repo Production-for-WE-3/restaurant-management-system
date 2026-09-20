@@ -46,7 +46,7 @@ import {
   useUpdateOrderStatus,
   type Order,
   type OrderItem,
-  type TableSessionFoodStatusCount,
+  type FoodStatusCount,
 } from "@rms/api-client/hooks/use-orders"
 import { ORDER_PAYMENT_METHODS } from "@rms/validators/orders"
 import { calculatePaymentTotals } from "@rms/validators/payment-totals"
@@ -139,13 +139,16 @@ function EditableCart({
 }) {
   const { data: items, isLoading } = useOrderItems(orderId)
   const { data: order } = useOrder(orderId)
-  // table_session_food_status_counts is a per-food rollup of everything already
-  // sent to the kitchen for this table's whole visit (across every round/order) —
-  // stock_reserved (not-yet-sent) rows are deliberately excluded from it, so it
-  // only ever covers what belongs in the read-only "Placed order" section below.
+  // table_session_food_status_counts is the rollup every status display reads:
+  // one row per food+variant for this table's whole visit (across every
+  // round/order). It now also carries cart-stage units and keeps rows at zero,
+  // so the "Placed order" section below filters to rows with something
+  // actually in the kitchen — the cart itself renders from the live item list.
   const { data: statusCounts, isLoading: statusCountsLoading } = useTableSessionFoodStatusCounts(
     order?.tableSessionId ?? 0,
   )
+  const kitchenCounts =
+    statusCounts?.filter((row) => STATUS_COUNT_STAGES.some((stage) => row[stage.key] > 0)) ?? []
   const { data: menu } = useMenu(order?.outletId ?? null)
   const { data: payments } = useOrderPayments(orderId)
   const createPayment = useCreateOrderPayment(orderId)
@@ -343,7 +346,7 @@ function EditableCart({
         {isLoading && <ListSkeleton count={3} />}
         {!isLoading &&
           pendingCount === 0 &&
-          (canEditSentItems ? sentItems.length === 0 : (statusCounts?.length ?? 0) === 0) && (
+          (canEditSentItems ? sentItems.length === 0 : kitchenCounts.length === 0) && (
             <p className="text-sm text-muted-foreground">No items yet — tap a food to add it.</p>
           )}
         {pendingCount > 0 && (
@@ -392,13 +395,15 @@ function EditableCart({
                 ))}
               </div>
             )
-          : (statusCounts?.length ?? 0) > 0 && (
+          : kitchenCounts.length > 0 && (
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-muted-foreground uppercase">
-                  Placed order ({statusCounts?.length})
+                  Placed order ({kitchenCounts.length})
                 </h3>
                 {statusCountsLoading && <ListSkeleton count={2} />}
-                {statusCounts?.map((row) => <FoodStatusCountRow key={row.foodId} row={row} />)}
+                {kitchenCounts.map((row) => (
+                  <FoodStatusCountRow key={`${row.foodId}:${row.foodVariantId ?? 0}`} row={row} />
+                ))}
               </div>
             )}
       </div>
@@ -907,9 +912,11 @@ function SentItemGroupRow({
   )
 }
 
+// Deliberately omits reservedCount: cart-stage units belong to the editable
+// "In cart" section above, not to this read-only kitchen rollup.
 const STATUS_COUNT_STAGES: {
   key: keyof Pick<
-    TableSessionFoodStatusCount,
+    FoodStatusCount,
     "orderedCount" | "preparingCount" | "readyCount" | "servedCount" | "cancelledCount"
   >
   label: string
@@ -925,13 +932,16 @@ const STATUS_COUNT_STAGES: {
 /**
  * Read-only — once an item is in this rollup it's already in the kitchen
  * pipeline, edited from the KDS/tickets screens, not from the cart. One row
- * per food, one badge per pipeline stage it currently has units in.
+ * per food+variant, one badge per pipeline stage it currently has units in.
  */
-function FoodStatusCountRow({ row }: { row: TableSessionFoodStatusCount }) {
+function FoodStatusCountRow({ row }: { row: FoodStatusCount }) {
   const stages = STATUS_COUNT_STAGES.filter((stage) => row[stage.key] > 0)
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg border border-input p-2.5">
-      <p className="text-sm font-medium">{row.foodName}</p>
+      <p className="text-sm font-medium">
+        {row.foodName}
+        {row.foodVariantName ? ` — ${row.foodVariantName}` : ""}
+      </p>
       <div className="flex shrink-0 flex-wrap justify-end gap-1">
         {stages.map((stage) => (
           <Badge key={stage.key} variant="outline" className={`text-xs ${stage.className}`}>

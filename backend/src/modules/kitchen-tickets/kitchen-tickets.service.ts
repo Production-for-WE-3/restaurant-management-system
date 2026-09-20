@@ -33,9 +33,9 @@ export interface KdsBootstrapResponse {
 }
 
 /**
- * Item lifecycle plus "cancelled" reachable from any non-terminal state —
- * mirrors OrderItem's own status field (see orders.service.ts), which this
- * service keeps in sync.
+ * Item lifecycle plus "cancelled" reachable from any non-terminal state.
+ * These are OrderItem.status values — a kitchen ticket item has no status of
+ * its own to keep in sync any more (see migration 1781600000000).
  */
 const ITEM_STATUS_TRANSITIONS: Record<
   KitchenTicketItemStatus,
@@ -47,6 +47,32 @@ const ITEM_STATUS_TRANSITIONS: Record<
   served: [],
   cancelled: [],
 };
+
+/**
+ * What a ticket item must have loaded before toItemResponse() can map it.
+ * orderItem carries the status; its food/variant carry the names. Loading a
+ * ticket item without these yields a response whose status silently falls
+ * back and whose food name is missing — and since the KDS merges pushed
+ * items into its cache, a partial payload would blank the board's labels.
+ */
+const ITEM_DISPLAY_RELATIONS = [
+  'orderItem',
+  'orderItem.food',
+  'orderItem.foodVariant',
+];
+
+/**
+ * A ticket item's status, which lives on its order item. Items reach a ticket
+ * only once they've been sent, so 'stock_reserved' isn't a state the kitchen
+ * can act from — a held item that somehow surfaces here is treated as
+ * freshly sent rather than crashing the transition lookup.
+ */
+function itemStatus(item: KitchenTicketItem): KitchenTicketItemStatus {
+  const status = item.orderItem?.status;
+  return status === undefined || status === 'stock_reserved'
+    ? 'sent_to_kitchen'
+    : status;
+}
 
 const TICKET_DISPLAY_RELATIONS = [
   'order',
@@ -136,6 +162,7 @@ export class KitchenTicketsService {
     await this.findOne(ticketId);
     const items = await this.ticketItemsRepository.find({
       where: { ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
     return items.map((item) => this.toItemResponse(item));
   }
@@ -201,6 +228,7 @@ export class KitchenTicketsService {
     const ticket = await this.findOne(ticketId);
     const item = await this.ticketItemsRepository.findOne({
       where: { id: itemId, ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
     if (!item) {
       throw new NotFoundException(
@@ -208,15 +236,14 @@ export class KitchenTicketsService {
       );
     }
 
-    const allowed = ITEM_STATUS_TRANSITIONS[item.status];
-    if (!allowed.includes(status)) {
+    const current = itemStatus(item);
+    if (!ITEM_STATUS_TRANSITIONS[current].includes(status)) {
       throw new BadRequestException(
-        `Cannot move kitchen ticket item from "${item.status}" to "${status}"`,
+        `Cannot move kitchen ticket item from "${current}" to "${status}"`,
       );
     }
 
     const now = new Date();
-    item.status = status;
     if (status === 'preparing') item.startedAt = now;
     if (status === 'ready') item.readyAt = now;
     if (status === 'served') item.servedAt = now;
@@ -226,6 +253,9 @@ export class KitchenTicketsService {
         .getRepository(OrderItem)
         .update({ id: item.orderItemId }, { status });
     });
+    // The in-memory relation still holds the pre-update row, and it's what
+    // the outgoing payload reads its status from.
+    item.orderItem.status = status;
 
     const updatedTicket = await this.recomputeTicketStatus(ticket.id);
     if (status === 'ready') {
@@ -234,8 +264,8 @@ export class KitchenTicketsService {
     if (status === 'served') {
       await this.ordersService.maybeAdvanceToServed(ticket.orderId, null);
     }
-    this.gateway.notifyTicketUpdated(updatedTicket);
-    this.gateway.notifyItemUpdated(updatedTicket.outletId, item);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(updatedTicket.id));
+    this.gateway.notifyItemUpdated(updatedTicket.outletId, this.toItemResponse(item));
     return updatedTicket;
   }
 
@@ -246,7 +276,7 @@ export class KitchenTicketsService {
     const ticket = await this.findOne(ticketId);
     ticket.priority = priority;
     const saved = await this.ticketsRepository.save(ticket);
-    this.gateway.notifyTicketUpdated(saved);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(saved.id));
     return saved;
   }
 
@@ -264,29 +294,22 @@ export class KitchenTicketsService {
     const ticket = await this.findOne(ticketId);
     const items = await this.ticketItemsRepository.find({
       where: { ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
 
     const cancellable = items.filter((item) =>
-      ITEM_STATUS_TRANSITIONS[item.status].includes('cancelled'),
+      ITEM_STATUS_TRANSITIONS[itemStatus(item)].includes('cancelled'),
     );
-    for (const item of cancellable) {
-      item.status = 'cancelled';
-    }
     if (cancellable.length > 0) {
-      await this.dataSource.transaction(async (manager) => {
-        await manager.getRepository(KitchenTicketItem).save(cancellable);
-        await manager
-          .getRepository(OrderItem)
-          .update(
-            { id: In(cancellable.map((item) => item.orderItemId)) },
-            { status: 'cancelled' },
-          );
-      });
+      await this.orderItemsRepository.update(
+        { id: In(cancellable.map((item) => item.orderItemId)) },
+        { status: 'cancelled' },
+      );
     }
 
     ticket.status = 'cancelled';
     const saved = await this.ticketsRepository.save(ticket);
-    this.gateway.notifyTicketUpdated(saved);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(saved.id));
     await this.notifySimple(
       saved,
       'kitchen_cancelled',
@@ -297,8 +320,8 @@ export class KitchenTicketsService {
 
   /**
    * Ticket-level "Start": bulk-moves every 'sent_to_kitchen' item to
-   * 'preparing' (and mirrors the change onto OrderItem.status). This is the
-   * one-tap version of the per-item action for a whole ticket.
+   * 'preparing'. This is the one-tap version of the per-item action for a
+   * whole ticket.
    */
   async startTicket(ticketId: number): Promise<KitchenTicket> {
     return this.transitionItems(ticketId, ['sent_to_kitchen'], 'preparing');
@@ -327,10 +350,11 @@ export class KitchenTicketsService {
   }
 
   /**
-   * Shared bulk transition: moves every item in `fromStatuses` to `toStatus`,
-   * keeps OrderItem.status in sync, recomputes the aggregate ticket status and
-   * pushes one ticket update + one item update per affected item so both the
-   * KDS board and POS screens refresh in realtime.
+   * Shared bulk transition: moves every item in `fromStatuses` to `toStatus`
+   * by writing OrderItem.status (the only place item status lives),
+   * recomputes the aggregate ticket status and pushes one ticket update +
+   * one item update per affected item so both the KDS board and POS screens
+   * refresh in realtime.
    */
   private async transitionItems(
     ticketId: number,
@@ -340,8 +364,11 @@ export class KitchenTicketsService {
     const ticket = await this.findOne(ticketId);
     const items = await this.ticketItemsRepository.find({
       where: { ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
-    const eligible = items.filter((item) => fromStatuses.includes(item.status));
+    const eligible = items.filter((item) =>
+      fromStatuses.includes(itemStatus(item)),
+    );
     if (eligible.length === 0) {
       throw new BadRequestException(
         `No items on ticket ${ticketId} eligible to move to "${toStatus}"`,
@@ -350,7 +377,6 @@ export class KitchenTicketsService {
 
     const now = new Date();
     for (const item of eligible) {
-      item.status = toStatus;
       if (toStatus === 'preparing') item.startedAt = now;
       if (toStatus === 'ready') item.readyAt = now;
       if (toStatus === 'served') item.servedAt = now;
@@ -364,6 +390,7 @@ export class KitchenTicketsService {
           { status: toStatus },
         );
     });
+    for (const item of eligible) item.orderItem.status = toStatus;
 
     const updatedTicket = await this.recomputeTicketStatus(ticketId);
     if (toStatus === 'ready') {
@@ -375,9 +402,12 @@ export class KitchenTicketsService {
     if (toStatus === 'served') {
       await this.ordersService.maybeAdvanceToServed(ticket.orderId, null);
     }
-    this.gateway.notifyTicketUpdated(updatedTicket);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(updatedTicket.id));
     for (const item of eligible) {
-      this.gateway.notifyItemUpdated(updatedTicket.outletId, item);
+      this.gateway.notifyItemUpdated(
+        updatedTicket.outletId,
+        this.toItemResponse(item),
+      );
     }
     return updatedTicket;
   }
@@ -385,20 +415,21 @@ export class KitchenTicketsService {
   async recallItem(ticketId: number, itemId: number): Promise<KitchenTicket> {
     const item = await this.ticketItemsRepository.findOne({
       where: { id: itemId, ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
     if (!item) {
       throw new NotFoundException(
         `Kitchen ticket item ${itemId} not found on ticket ${ticketId}`,
       );
     }
-    if (item.status !== 'ready' && item.status !== 'served') {
+    const current = itemStatus(item);
+    if (current !== 'ready' && current !== 'served') {
       throw new BadRequestException(
-        `Only "ready" or "served" items can be recalled (item is "${item.status}")`,
+        `Only "ready" or "served" items can be recalled (item is "${current}")`,
       );
     }
 
     const now = new Date();
-    item.status = 'preparing';
     item.readyAt = null;
     item.servedAt = null;
     item.recalledAt = now;
@@ -413,10 +444,14 @@ export class KitchenTicketsService {
         .update({ id: item.orderItemId }, { status: 'preparing' });
       await manager.getRepository(KitchenTicket).save(ticket);
     });
+    item.orderItem.status = 'preparing';
 
     const updatedTicket = await this.recomputeTicketStatus(ticketId);
-    this.gateway.notifyTicketUpdated(updatedTicket);
-    this.gateway.notifyItemUpdated(updatedTicket.outletId, item);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(updatedTicket.id));
+    this.gateway.notifyItemUpdated(
+      updatedTicket.outletId,
+      this.toItemResponse(item),
+    );
     await this.notifySimple(
       updatedTicket,
       'kitchen_recalled',
@@ -440,15 +475,17 @@ export class KitchenTicketsService {
     const ticket = await this.findOne(ticketId);
     const items = await this.ticketItemsRepository.find({
       where: { ticketId },
+      relations: ITEM_DISPLAY_RELATIONS,
     });
+    const statuses = items.map(itemStatus);
 
     const now = new Date();
-    const allTerminal = items.every(
-      (item) => item.status === 'served' || item.status === 'cancelled',
+    const allTerminal = statuses.every(
+      (status) => status === 'served' || status === 'cancelled',
     );
-    const allCancelled = items.every((item) => item.status === 'cancelled');
-    const anyActive = items.some(
-      (item) => item.status === 'preparing' || item.status === 'ready',
+    const allCancelled = statuses.every((status) => status === 'cancelled');
+    const anyActive = statuses.some(
+      (status) => status === 'preparing' || status === 'ready',
     );
 
     if (allTerminal) {
@@ -481,22 +518,47 @@ export class KitchenTicketsService {
   }
 
   /** Called by OrdersService.sendToKitchen() after creating tickets in its own transaction. */
-  notifyTicketsCreated(tickets: KitchenTicket[]): void {
-    this.gateway.notifyTicketsCreated(tickets);
+  async notifyTicketsCreated(tickets: KitchenTicket[]): Promise<void> {
+    this.gateway.notifyTicketsCreated(
+      await Promise.all(tickets.map((ticket) => this.toPushPayload(ticket.id))),
+    );
+  }
+
+  /**
+   * Reloads a ticket with every display relation and maps it for the wire.
+   * Push payloads must be fully hydrated: the KDS appends a pushed
+   * 'created' ticket straight onto its board, so emitting the bare entity a
+   * repository.save() hands back puts a ticket up there with no items, no
+   * table and no station — and nothing refetches it into shape afterwards.
+   */
+  private async toPushPayload(
+    ticketId: number,
+  ): Promise<KitchenTicketResponseDto> {
+    const ticket = await this.ticketsRepository.findOne({
+      where: { id: ticketId },
+      relations: TICKET_DISPLAY_RELATIONS,
+    });
+    if (!ticket) {
+      throw new NotFoundException(`Kitchen ticket ${ticketId} not found`);
+    }
+    return this.toResponse(ticket);
   }
 
   /**
    * "Mark Delivered": bulk-moves every 'ready' item across all of an order's
-   * kitchen tickets to 'served' (the waitstaff handoff). Keeps OrderItem.status
-   * in sync, recomputes each affected ticket and pushes the updates so the
-   * ready queue clears in realtime.
+   * kitchen tickets to 'served' (the waitstaff handoff), recomputes each
+   * affected ticket and pushes the updates so the ready queue clears in
+   * realtime.
    */
   async markOrderReadyItemsServed(orderId: number): Promise<KitchenTicket[]> {
     const eligible = await this.ticketItemsRepository
       .createQueryBuilder('ticketItem')
       .innerJoin('ticketItem.ticket', 'ticket')
+      .innerJoinAndSelect('ticketItem.orderItem', 'orderItem')
+      .leftJoinAndSelect('orderItem.food', 'food')
+      .leftJoinAndSelect('orderItem.foodVariant', 'foodVariant')
       .where('ticket.order_id = :orderId', { orderId })
-      .andWhere('ticketItem.status = :status', { status: 'ready' })
+      .andWhere('orderItem.status = :status', { status: 'ready' })
       .getMany();
     if (eligible.length === 0) {
       throw new BadRequestException(
@@ -506,7 +568,6 @@ export class KitchenTicketsService {
 
     const now = new Date();
     for (const item of eligible) {
-      item.status = 'served';
       item.servedAt = now;
     }
     await this.dataSource.transaction(async (manager) => {
@@ -518,6 +579,7 @@ export class KitchenTicketsService {
           { status: 'served' },
         );
     });
+    for (const item of eligible) item.orderItem.status = 'served';
 
     // Every ticket here belongs to the same order, so recomputing them via
     // the single-ticket recomputeTicketStatus() one at a time would call
@@ -532,9 +594,12 @@ export class KitchenTicketsService {
       ticketIds.map((ticketId) => this.recomputeTicketStatusOnly(ticketId)),
     );
     for (const updated of tickets) {
-      this.gateway.notifyTicketUpdated(updated);
+      this.gateway.notifyTicketUpdated(await this.toPushPayload(updated.id));
       for (const item of eligible.filter((i) => i.ticketId === updated.id)) {
-        this.gateway.notifyItemUpdated(updated.outletId, item);
+        this.gateway.notifyItemUpdated(
+          updated.outletId,
+          this.toItemResponse(item),
+        );
       }
     }
     await this.ordersService.syncStatusFromItems(orderId, null);
@@ -551,6 +616,9 @@ export class KitchenTicketsService {
     const item = await this.ticketItemsRepository
       .createQueryBuilder('ticketItem')
       .innerJoinAndSelect('ticketItem.ticket', 'ticket')
+      .innerJoinAndSelect('ticketItem.orderItem', 'orderItem')
+      .leftJoinAndSelect('orderItem.food', 'food')
+      .leftJoinAndSelect('orderItem.foodVariant', 'foodVariant')
       .where('ticketItem.id = :ticketItemId', { ticketItemId })
       .andWhere('ticket.order_id = :orderId', { orderId })
       .getOne();
@@ -560,14 +628,14 @@ export class KitchenTicketsService {
         `Ready item ${ticketItemId} was not found on order ${orderId}`,
       );
     }
-    if (item.status !== 'ready') {
+    const current = itemStatus(item);
+    if (current !== 'ready') {
       throw new BadRequestException(
-        `Item ${ticketItemId} is not ready to be delivered (status: ${item.status})`,
+        `Item ${ticketItemId} is not ready to be delivered (status: ${current})`,
       );
     }
 
     const now = new Date();
-    item.status = 'served';
     item.servedAt = now;
     await this.dataSource.transaction(async (manager) => {
       await manager.getRepository(KitchenTicketItem).save(item);
@@ -575,10 +643,11 @@ export class KitchenTicketsService {
         .getRepository(OrderItem)
         .update({ id: item.orderItemId }, { status: 'served' });
     });
+    item.orderItem.status = 'served';
 
     const ticket = await this.recomputeTicketStatus(item.ticketId);
-    this.gateway.notifyTicketUpdated(ticket);
-    this.gateway.notifyItemUpdated(ticket.outletId, item);
+    this.gateway.notifyTicketUpdated(await this.toPushPayload(ticket.id));
+    this.gateway.notifyItemUpdated(ticket.outletId, this.toItemResponse(item));
     await this.ordersService.maybeAdvanceToServed(orderId, null);
     return ticket;
   }
@@ -765,12 +834,16 @@ export class KitchenTicketsService {
       id: item.id,
       ticketId: item.ticketId,
       orderItemId: item.orderItemId,
-      status: item.status,
+      // Still on the wire exactly as before — it just reads through to the
+      // order item now instead of a column of its own.
+      status: itemStatus(item),
       startedAt: item.startedAt,
       readyAt: item.readyAt,
       servedAt: item.servedAt,
       recalledAt: item.recalledAt,
       recallCount: item.recallCount,
+      createdAt: item.createdAt,
+      updatedAt: item.updatedAt,
       orderItem: item.orderItem
         ? {
             id: item.orderItem.id,

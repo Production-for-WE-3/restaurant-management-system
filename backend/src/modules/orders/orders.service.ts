@@ -43,6 +43,10 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { OutletDepartment } from '../outlet-departments/entities/outlet-department.entity';
 import { OutletDepartmentsService } from '../outlet-departments/outlet-departments.service';
 import { OutletsService } from '../outlets/outlets.service';
+import {
+  deriveOrderStageFromCounts,
+  type NamedFoodStatusCount,
+} from './order-stage';
 import { OrderPayment } from '../order-payments/entities/order-payment.entity';
 import { calculatePaymentTotals } from '@rms/validators/payment-totals';
 import { ReservationsService } from '../reservations/reservations.service';
@@ -297,24 +301,6 @@ export class OrdersService {
   }
 
   /**
-   * The happy-path stage the order's active (non-cancelled) items have
-   * collectively reached, or null if there's nothing to derive yet (every
-   * item is still 'stock_reserved' — not sent to kitchen). Item status
-   * itself is untouched here; this only reads it.
-   */
-  private deriveOrderStageFromItems(items: OrderItem[]): OrderStatus | null {
-    const statuses = new Set(items.map((item) => item.status));
-    if (statuses.size === 0) return null;
-    if (statuses.size === 1 && statuses.has('served')) return 'served';
-    if (statuses.has('served')) return 'partially_served';
-    if (statuses.size === 1 && statuses.has('ready')) return 'ready';
-    if (statuses.has('ready')) return 'partially_ready';
-    if (statuses.has('preparing')) return 'preparing';
-    if (statuses.has('sent_to_kitchen')) return 'accepted';
-    return null;
-  }
-
-  /**
    * Shortest path from `from` to `to` over the real ORDER_STATUS_TRANSITIONS
    * graph (BFS — the graph is small and every edge weight is equal).
    * Deliberately not a fixed "walk every intermediate stage" list:
@@ -342,19 +328,26 @@ export class OrdersService {
   }
 
   /**
-   * Called by KitchenTicketsService after any item-level change. Order.status
-   * only otherwise moves on an explicit staff PATCH or via
-   * maybeAdvanceToServed — nothing walks it through preparing/partially-ready/
-   * ready as tickets progress (see the ORDER_STATUS_TRANSITIONS comment).
-   * This closes that gap: sent (accepted) -> preparing -> (partially_ready
-   * or ready) -> (partially_served or served), taking only the direct hops
-   * the items actually support (via findStatusPath), each one going through
-   * the normal updateStatus() path so history/notifications/realtime push
-   * all fire exactly as they would for a staff-driven change. Deliberately
-   * never moves it backward (e.g. after a recalled item) — findStatusPath
-   * returns [] when `to` is behind `from`, since the graph has no backward
-   * edges — and never touches cancelled/completed orders or item status
-   * itself.
+   * Walks Order.status forward to wherever the order's kitchen counts say it
+   * has actually reached. Called after any item-level change; Order.status
+   * only otherwise moves on an explicit staff PATCH, so without this nothing
+   * would carry it through preparing/partially-ready/ready as tickets
+   * progress (see the ORDER_STATUS_TRANSITIONS comment).
+   *
+   * The target stage comes from table_session_food_status_counts via
+   * deriveOrderStageFromCounts — the single derivation — rather than this
+   * service re-aggregating order_items itself, which is what used to let
+   * Order.status drift from the rollup. Safe to read the counts here because
+   * the trigger that maintains them is row-level AFTER on order_items, so
+   * every caller's item writes have already landed by the time this runs.
+   *
+   * Each hop goes through the normal updateStatus() path so history/
+   * notifications/realtime push fire exactly as they would for a staff-driven
+   * change, and only the direct hops the counts support are taken (via
+   * findStatusPath). Deliberately never moves backward (e.g. after a recalled
+   * item) — findStatusPath returns [] when `to` is behind `from`, since the
+   * graph has no backward edges — and never touches cancelled/completed
+   * orders or item status itself.
    */
   async syncStatusFromItems(
     orderId: number,
@@ -363,9 +356,10 @@ export class OrdersService {
     const order = await this.findOne(orderId);
     if (order.status === 'cancelled' || order.status === 'completed') return;
 
-    const items = await this.orderItemsRepository.find({ where: { orderId } });
-    const active = items.filter((item) => item.status !== 'cancelled');
-    const target = this.deriveOrderStageFromItems(active);
+    const counts = await this.tableSessionFoodStatusCountsRepository.find({
+      where: { orderId },
+    });
+    const target = deriveOrderStageFromCounts(counts);
     if (!target) return;
 
     for (const status of this.findStatusPath(order.status, target)) {
@@ -702,7 +696,12 @@ export class OrdersService {
    */
   async findMineForCustomer(
     tableSessionId: number,
-  ): Promise<(Order & { items: OrderItemWithRelations[] })[]> {
+  ): Promise<
+    (Order & {
+      items: OrderItemWithRelations[];
+      foodStatusCounts: NamedFoodStatusCount[];
+    })[]
+  > {
     const orders = await this.ordersRepository.find({
       where: { tableSessionId },
       order: { createdAt: 'DESC' },
@@ -725,10 +724,33 @@ export class OrdersService {
       items.push(item);
       itemsByOrder.set(item.orderId, items);
     }
+
+    // Kitchen progress comes from the counts rollup, not from each item's own
+    // status column, so the guest tracker and every staff screen are reading
+    // the same source. The raw items stay for the bill lines (price, note,
+    // held flag) — what they no longer decide is how far along anything is.
+    const countRows = orders.length
+      ? await this.nameFoodStatusCounts(
+          await this.tableSessionFoodStatusCountsRepository.find({
+            where: { orderId: In(orders.map((order) => order.id)) },
+          }),
+        )
+      : [];
+    const countsByOrder = new Map<number, typeof countRows>();
+    for (const row of countRows) {
+      const rows = countsByOrder.get(row.orderId) ?? [];
+      rows.push(row);
+      countsByOrder.set(row.orderId, rows);
+    }
+
     return orders.map((order) => ({
       ...order,
       items: itemsByOrder.get(order.id) ?? [],
-    })) as (Order & { items: OrderItemWithRelations[] })[];
+      foodStatusCounts: countsByOrder.get(order.id) ?? [],
+    })) as (Order & {
+      items: OrderItemWithRelations[];
+      foodStatusCounts: NamedFoodStatusCount[];
+    })[];
   }
 
   async update(id: number, dto: UpdateOrderDto): Promise<Order> {
@@ -1098,7 +1120,6 @@ export class OrdersService {
             ticketItemRepo.create({
                 ticketId: ticket.id,
                 orderItemId: item.id,
-                status: 'ready',
                 startedAt: now,
                 readyAt: now,
               }),
@@ -1125,7 +1146,6 @@ export class OrdersService {
           ticketItemRepo.create({
               ticketId: ticket.id,
               orderItemId: item.id,
-              status: 'sent_to_kitchen',
             }),
         ));
         for (const item of groupItems) {
@@ -1153,7 +1173,7 @@ export class OrdersService {
     // because staff sent it to the kitchen queue.
     await this.maybeAdvanceToServed(order.id, changedBy);
     if (kitchenBound.length > 0) {
-      this.kitchenTicketsService.notifyTicketsCreated(kitchenBound);
+      await this.kitchenTicketsService.notifyTicketsCreated(kitchenBound);
     }
     for (const { ticketId, itemIds } of readyMade) {
       await this.kitchenTicketsService.notifyItemsReady(ticketId, itemIds);
@@ -1182,25 +1202,24 @@ export class OrdersService {
   }
 
   /**
-   * Every non-cancelled OrderItem on the order is 'served' → auto-advance
-   * Order.status to 'served' if it isn't already there or terminal. Called
-   * whenever an item transitions to 'served' via kitchen-ticket progress
-   * (including a waiter delivering a ready-made item off the ready queue).
+   * Auto-advance Order.status to 'served' once the counts say every
+   * remaining unit has been served. Called whenever an item transitions to
+   * 'served' via kitchen-ticket progress (including a waiter delivering a
+   * ready-made item off the ready queue).
+   *
+   * Deliberately narrower than syncStatusFromItems despite sharing its
+   * derivation: call sites that must not push a 'pending' order to
+   * 'accepted' — sending to the kitchen queue isn't the kitchen accepting
+   * it — still want this terminal hop when the last item is delivered.
    */
   async maybeAdvanceToServed(
     orderId: number,
     changedBy: number | null,
   ): Promise<void> {
-    const items = await this.orderItemsRepository.find({
+    const counts = await this.tableSessionFoodStatusCountsRepository.find({
       where: { orderId },
     });
-    const relevant = items.filter((item) => item.status !== 'cancelled');
-    if (
-      relevant.length === 0 ||
-      !relevant.every((item) => item.status === 'served')
-    ) {
-      return;
-    }
+    if (deriveOrderStageFromCounts(counts) !== 'served') return;
 
     const order = await this.findOne(orderId);
     if (
@@ -1284,29 +1303,85 @@ export class OrdersService {
   }
 
   /**
-   * Reads table_session_food_status_counts — a rollup kept in sync by a DB
-   * trigger on order_items (see migration 1781300000000), not written here.
-   * One row per food currently active in this table's kitchen pipeline,
-   * with how many units sit in each stage right now.
+   * Every (food, variant) line of one order, with how many units sit in each
+   * stage right now. Reads table_session_food_status_counts — kept in sync by
+   * a DB trigger on order_items (see migration 1781500000000), never written
+   * here — so this and Order.status can't disagree about the same order.
+   */
+  async listFoodStatusCountsForOrder(orderId: number) {
+    const rows = await this.tableSessionFoodStatusCountsRepository.find({
+      where: { orderId },
+    });
+    return this.nameFoodStatusCounts(rows);
+  }
+
+  /**
+   * The same counts rolled up across every order on a table's visit — a
+   * session can span several orders (new round, split bill), which the row
+   * grain deliberately keeps separate, so the rollup happens here rather
+   * than in the table.
    */
   async listFoodStatusCountsForTableSession(tableSessionId: number) {
     const rows = await this.tableSessionFoodStatusCountsRepository.find({
       where: { tableSessionId },
     });
-    const foods = await this.foodsService.findByIds(
-      rows.map((row) => row.foodId),
-    );
+
+    const merged = new Map<string, TableSessionFoodStatusCount>();
+    for (const row of rows) {
+      const key = `${row.foodId}:${row.foodVariantId ?? -1}`;
+      const existing = merged.get(key);
+      if (!existing) {
+        merged.set(key, { ...row });
+        continue;
+      }
+      existing.reservedCount += row.reservedCount;
+      existing.orderedCount += row.orderedCount;
+      existing.preparingCount += row.preparingCount;
+      existing.readyCount += row.readyCount;
+      existing.servedCount += row.servedCount;
+      existing.cancelledCount += row.cancelledCount;
+      if (row.createdAt < existing.createdAt) existing.createdAt = row.createdAt;
+      if (row.updatedAt > existing.updatedAt) existing.updatedAt = row.updatedAt;
+    }
+
+    return this.nameFoodStatusCounts([...merged.values()]);
+  }
+
+  /** Batches the food/variant name lookups both status-count reads need. */
+  private async nameFoodStatusCounts(
+    rows: TableSessionFoodStatusCount[],
+  ): Promise<NamedFoodStatusCount[]> {
+    const variantIds = rows
+      .map((row) => row.foodVariantId)
+      .filter((id): id is number => id !== null);
+    const [foods, variants] = await Promise.all([
+      this.foodsService.findByIds([...new Set(rows.map((row) => row.foodId))]),
+      variantIds.length
+        ? this.foodVariantsService.findByIds([...new Set(variantIds)])
+        : Promise.resolve([]),
+    ]);
     const foodNameById = new Map(foods.map((food) => [food.id, food.name]));
+    const variantNameById = new Map(
+      variants.map((variant) => [variant.id, variant.name]),
+    );
 
     return rows.map((row) => ({
+      orderId: row.orderId,
       foodId: row.foodId,
       foodName: foodNameById.get(row.foodId) ?? `Item #${row.foodId}`,
+      foodVariantId: row.foodVariantId,
+      foodVariantName:
+        row.foodVariantId === null
+          ? null
+          : (variantNameById.get(row.foodVariantId) ?? null),
       tableSessionId: row.tableSessionId,
+      reservedCount: row.reservedCount,
       orderedCount: row.orderedCount,
       preparingCount: row.preparingCount,
       readyCount: row.readyCount,
       servedCount: row.servedCount,
       cancelledCount: row.cancelledCount,
+      createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     }));
   }
