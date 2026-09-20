@@ -1939,13 +1939,21 @@ export class OrdersService {
 
       try {
         await this.dataSource.transaction(async (manager) => {
-          for (const item of itemsNeedingReservationWork) {
-            // foodById was already populated resolving prices above, and
-            // `item` itself came from the batched read-back — reuse both
-            // instead of paying for resolveRequiredIngredients' own
-            // foodsService.findOne() and this function's own findItem()
-            // a second time per item.
-            await this.recalculateReservations(item.id, order, foodById.get(item.foodId), manager, item);
+          // For the common case (no recipe, no addon recipe, no existing
+          // reservation), the null-work short-circuit above already skipped
+          // the entire pipeline. For the remaining subset, take the diff as a
+          // batch across the whole cart instead of calling
+          // recalculateReservations() once per item inside the transaction —
+          // this keeps the correct inventory semantics while avoiding the
+          // N-item serial round-trip pattern that was still dominating a 30
+          // item cart.
+          if (itemsNeedingReservationWork.length > 0) {
+            await this.recalculateReservationsBatch(
+              order,
+              itemsNeedingReservationWork,
+              foodById,
+              manager,
+            );
           }
         });
       } catch (error) {
@@ -2541,6 +2549,151 @@ export class OrdersService {
     }
 
     return required;
+  }
+
+  /**
+   * Batched version of recalculateReservations() for a whole cart.
+   * One transaction covers the whole set of newly-added items, and every
+   * stock delta is applied across the group instead of re-running the
+   * same per-item flow in a loop.
+   */
+  private async recalculateReservationsBatch(
+    order: Order,
+    items: OrderItem[],
+    foodById: Map<number, Food>,
+    sharedManager?: EntityManager,
+  ): Promise<void> {
+    if (items.length === 0) return;
+
+    const itemIds = items.map((item) => item.id);
+    const [allAddons, allExisting, warehouse] = await Promise.all([
+      this.orderItemAddonsRepository.find({
+        where: { orderItemId: In(itemIds) },
+      }),
+      this.reservationsRepository.find({
+        where: { orderItemId: In(itemIds), status: 'reserved' },
+      }),
+      this.warehousesService.findDefaultForOutlet(order.outletId),
+    ]);
+
+    const addonsByItemId = new Map<number, OrderItemAddon[]>();
+    for (const addon of allAddons) {
+      const existing = addonsByItemId.get(addon.orderItemId) ?? [];
+      existing.push(addon);
+      addonsByItemId.set(addon.orderItemId, existing);
+    }
+
+    const existingByItemId = new Map<number, OrderItemIngredientReservation[]>();
+    for (const reservation of allExisting) {
+      const existing = existingByItemId.get(reservation.orderItemId) ?? [];
+      existing.push(reservation);
+      existingByItemId.set(reservation.orderItemId, existing);
+    }
+
+    const requiredByItemId = new Map<number, Map<number, number>>();
+    await Promise.all(
+      items.map(async (item) => {
+        const required = new Map<number, number>();
+        const food = foodById.get(item.foodId);
+        if (food?.itemType === 'kitchen') {
+          const recipes = await this.foodsService.resolveRecipes(
+            item.foodId,
+            item.foodVariantId,
+          );
+          await this.accumulateRecipeContributions(
+            recipes,
+            item.quantity,
+            required,
+          );
+        }
+
+        const addonRecipeGroups = await Promise.all(
+          (addonsByItemId.get(item.id) ?? []).map(async (itemAddon) => {
+            const addon = await this.addonsService.findOne(itemAddon.addonId);
+            if (!addon.isRecipeEnabled) {
+              return { recipes: [], quantity: itemAddon.quantity };
+            }
+            const recipes = await this.addonsService.resolveRecipes(addon.id);
+            return { recipes, quantity: itemAddon.quantity };
+          }),
+        );
+
+        for (const { recipes, quantity } of addonRecipeGroups) {
+          if (recipes.length === 0) continue;
+          await this.accumulateRecipeContributions(
+            recipes,
+            quantity,
+            required,
+          );
+        }
+
+        requiredByItemId.set(item.id, required);
+      }),
+    );
+
+    const apply = async (manager: EntityManager) => {
+      const reservationRepo = manager.getRepository(
+        OrderItemIngredientReservation,
+      );
+
+      for (const item of items) {
+        const required = requiredByItemId.get(item.id) ?? new Map();
+        const existing = existingByItemId.get(item.id) ?? [];
+        const existingByIngredient = new Map(
+          existing.map((reservation) => [reservation.ingredientId, reservation]),
+        );
+
+        for (const reservation of existing) {
+          if (!required.has(reservation.ingredientId)) {
+            await this.warehouseIngredientStocksService.reserve(
+              reservation.warehouseId,
+              reservation.ingredientId,
+              -reservation.reservedQuantity,
+              manager,
+            );
+            await reservationRepo.remove(reservation);
+          }
+        }
+
+        for (const [ingredientId, requiredQty] of required) {
+          const existingReservation = existingByIngredient.get(ingredientId);
+          const currentReserved = existingReservation?.reservedQuantity ?? 0;
+          const delta = round4(requiredQty - currentReserved);
+
+          if (delta !== 0) {
+            await this.warehouseIngredientStocksService.reserve(
+              warehouse.id,
+              ingredientId,
+              delta,
+              manager,
+            );
+          }
+
+          if (existingReservation) {
+            existingReservation.reservedQuantity = requiredQty;
+            await reservationRepo.save(existingReservation);
+          } else if (requiredQty > 0) {
+            await reservationRepo.save(
+              reservationRepo.create({
+                orderItemId: item.id,
+                warehouseId: warehouse.id,
+                ingredientId,
+                reservedQuantity: requiredQty,
+                consumedQuantity: 0,
+                wastageQuantity: 0,
+                status: 'reserved',
+              }),
+            );
+          }
+        }
+      }
+    };
+
+    if (sharedManager) {
+      await apply(sharedManager);
+      return;
+    }
+    await this.dataSource.transaction(apply);
   }
 
   /**
