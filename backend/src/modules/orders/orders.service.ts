@@ -894,14 +894,20 @@ export class OrdersService {
       // actual transition into 'served' — both the explicit "Mark
       // Delivered" route and maybeAdvanceToServed's auto-advance land here,
       // and the fromStatus guard keeps a redundant same-status save quiet.
-      const notification = await this.notificationsService.create({
-        outletId: saved.outletId,
-        type: 'order_served',
-        title: `Order ${saved.orderNumber} served`,
-        orderId: saved.id,
-        actorUserId: changedBy,
-      });
-      this.gateway.notifyNotificationCreated(notification);
+      // Fire-and-forget: the status change above is already committed, so a
+      // notification hiccup shouldn't fail this otherwise-successful request.
+      this.notificationsService
+        .create({
+          outletId: saved.outletId,
+          type: 'order_served',
+          title: `Order ${saved.orderNumber} served`,
+          orderId: saved.id,
+          actorUserId: changedBy,
+        })
+        .then((notification) => this.gateway.notifyNotificationCreated(notification))
+        .catch((error: Error) =>
+          this.logger.error(`Failed to create order_served notification for order ${saved.id}: ${error.message}`),
+        );
     } else if (dto.status === 'cancelled') {
       await this.releaseReservationsForOrder(id);
       await this.kitchenTicketsService.cancelAllForOrder(id);
@@ -922,16 +928,22 @@ export class OrdersService {
           `Failed to reverse customer credit charge for order ${saved.id}: ${(error as Error).message}`,
         );
       }
-      const notification = await this.notificationsService.create({
-        outletId: saved.outletId,
-        type: 'order_cancelled',
-        priority: 'high',
-        title: `Order ${saved.orderNumber} cancelled`,
-        body: dto.cancelReason ?? null,
-        orderId: saved.id,
-        actorUserId: changedBy,
-      });
-      this.gateway.notifyNotificationCreated(notification);
+      // Fire-and-forget: the cancellation above is already committed, so a
+      // notification hiccup shouldn't fail this otherwise-successful request.
+      this.notificationsService
+        .create({
+          outletId: saved.outletId,
+          type: 'order_cancelled',
+          priority: 'high',
+          title: `Order ${saved.orderNumber} cancelled`,
+          body: dto.cancelReason ?? null,
+          orderId: saved.id,
+          actorUserId: changedBy,
+        })
+        .then((notification) => this.gateway.notifyNotificationCreated(notification))
+        .catch((error: Error) =>
+          this.logger.error(`Failed to create order_cancelled notification for order ${saved.id}: ${error.message}`),
+        );
     }
 
     return saved;

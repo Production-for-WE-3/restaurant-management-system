@@ -3,6 +3,7 @@ import {
   forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -60,6 +61,8 @@ const TICKET_DISPLAY_RELATIONS = [
 
 @Injectable()
 export class KitchenTicketsService {
+  private readonly logger = new Logger(KitchenTicketsService.name);
+
   constructor(
     @InjectRepository(KitchenTicket)
     private readonly ticketsRepository: Repository<KitchenTicket>,
@@ -612,16 +615,23 @@ export class KitchenTicketsService {
     const body =
       names.length > 3 ? `${summary} +${names.length - 3} more` : summary;
 
-    const notification = await this.notificationsService.create({
-      outletId: ticket.outletId,
-      type: 'kitchen_ready',
-      title: `${tableName} — items ready`,
-      body,
-      tableName,
-      orderId: ticket.orderId,
-      data: JSON.stringify({ itemCount: names.length, ticketId }),
-    });
-    this.gateway.notifyNotificationCreated(notification);
+    // Fire-and-forget: the ticket/item state is already committed by the
+    // caller, so a notification hiccup shouldn't fail an otherwise-successful
+    // request.
+    this.notificationsService
+      .create({
+        outletId: ticket.outletId,
+        type: 'kitchen_ready',
+        title: `${tableName} — items ready`,
+        body,
+        tableName,
+        orderId: ticket.orderId,
+        data: JSON.stringify({ itemCount: names.length, ticketId }),
+      })
+      .then((notification) => this.gateway.notifyNotificationCreated(notification))
+      .catch((error: Error) =>
+        this.logger.error(`Failed to create kitchen_ready notification for ticket ${ticketId}: ${error.message}`),
+      );
   }
 
   /** Small persist+push helper for the recall/cancel notifications above. */
@@ -630,15 +640,21 @@ export class KitchenTicketsService {
     type: 'kitchen_recalled' | 'kitchen_cancelled',
     title: string,
   ): Promise<void> {
-    const notification = await this.notificationsService.create({
-      outletId: ticket.outletId,
-      type,
-      priority: 'high',
-      title,
-      orderId: ticket.orderId,
-      data: JSON.stringify({ ticketId: ticket.id }),
-    });
-    this.gateway.notifyNotificationCreated(notification);
+    // Fire-and-forget: the ticket state is already committed by the caller,
+    // so a notification hiccup shouldn't fail an otherwise-successful request.
+    this.notificationsService
+      .create({
+        outletId: ticket.outletId,
+        type,
+        priority: 'high',
+        title,
+        orderId: ticket.orderId,
+        data: JSON.stringify({ ticketId: ticket.id }),
+      })
+      .then((notification) => this.gateway.notifyNotificationCreated(notification))
+      .catch((error: Error) =>
+        this.logger.error(`Failed to create ${type} notification for ticket ${ticket.id}: ${error.message}`),
+      );
   }
 
   /**
@@ -669,17 +685,25 @@ export class KitchenTicketsService {
       if (alreadyNotified) {
         continue;
       }
-      const notification = await this.notificationsService.create({
-        outletId: ticket.outletId,
-        type: 'kitchen_delayed',
-        priority: 'urgent',
-        title: `Kitchen ticket #${ticket.id} is running late`,
-        body: `Open for over ${thresholdMinutes} minutes with no items ready yet.`,
-        orderId: ticket.orderId,
-        data: JSON.stringify({ ticketId: ticket.id }),
-      });
-      this.gateway.notifyNotificationCreated(notification);
-      notified += 1;
+      // One failed notification shouldn't stop the scan from checking the
+      // rest of the stale tickets.
+      try {
+        const notification = await this.notificationsService.create({
+          outletId: ticket.outletId,
+          type: 'kitchen_delayed',
+          priority: 'urgent',
+          title: `Kitchen ticket #${ticket.id} is running late`,
+          body: `Open for over ${thresholdMinutes} minutes with no items ready yet.`,
+          orderId: ticket.orderId,
+          data: JSON.stringify({ ticketId: ticket.id }),
+        });
+        this.gateway.notifyNotificationCreated(notification);
+        notified += 1;
+      } catch (error) {
+        this.logger.error(
+          `Failed to create kitchen_delayed notification for ticket ${ticket.id}: ${(error as Error).message}`,
+        );
+      }
     }
     return notified;
   }
