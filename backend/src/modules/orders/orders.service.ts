@@ -2478,32 +2478,54 @@ export class OrdersService {
     }[],
     quantityMultiplier: number,
     required: Map<number, number>,
+    ingredientById?: Map<number, any>,
+    conversionMultiplierByPair?: Map<string, number>,
   ): Promise<void> {
-    const contributions = await Promise.all(
-      recipes.map(async (recipe) => {
-        const ingredient = await this.ingredientsService.findOne(
-          recipe.ingredientId,
-        );
-        if (!isTrackableIngredientType(ingredient.category.type)) {
-          return null;
+    const ingredients =
+      ingredientById ??
+      new Map(
+        (await this.ingredientsService.findByIds(
+          [...new Set(recipes.map((recipe) => recipe.ingredientId))],
+        )).map((ingredient) => [ingredient.id, ingredient]),
+      );
+    const conversions =
+      conversionMultiplierByPair ??
+      await this.unitsService.findConversionMultipliers(
+        recipes
+          .map((recipe) => ({
+            fromUnitId: recipe.unitId,
+            toUnitId: ingredients.get(recipe.ingredientId)?.baseUnitId ?? 0,
+          }))
+          .filter((pair) => pair.toUnitId !== 0),
+      );
+
+    for (const recipe of recipes) {
+      const ingredient = ingredients.get(recipe.ingredientId);
+      if (!ingredient || !isTrackableIngredientType(ingredient.category.type)) {
+        continue;
+      }
+
+      const key = `${recipe.unitId}:${ingredient.baseUnitId}`;
+      const multiplier = conversions.get(key);
+      if (multiplier === undefined) {
+        if (recipe.unitId === ingredient.baseUnitId) {
+          // same-unit recipes are already normalized and still valid.
+        } else {
+          throw new BadRequestException(
+            `No unit conversion configured from unit ${recipe.unitId} to unit ${ingredient.baseUnitId}`,
+          );
         }
-        const multiplier = await this.unitsService.findConversionMultiplier(
-          recipe.unitId,
-          ingredient.baseUnitId,
-        );
-        const qty = round4(
-          (recipe.quantity + recipe.wastageQuantity) *
-            multiplier *
-            quantityMultiplier,
-        );
-        return { ingredientId: recipe.ingredientId, qty };
-      }),
-    );
-    for (const contribution of contributions) {
-      if (!contribution) continue;
+      }
+
+      const effectiveMultiplier = multiplier ?? 1;
+      const qty = round4(
+        (recipe.quantity + recipe.wastageQuantity) *
+          effectiveMultiplier *
+          quantityMultiplier,
+      );
       required.set(
-        contribution.ingredientId,
-        round4((required.get(contribution.ingredientId) ?? 0) + contribution.qty),
+        recipe.ingredientId,
+        round4((required.get(recipe.ingredientId) ?? 0) + qty),
       );
     }
   }
@@ -2514,39 +2536,83 @@ export class OrdersService {
   ): Promise<Map<number, number>> {
     const required = new Map<number, number>();
 
-    // Reuse the caller's already-loaded food when it's the same row (addItem
-    // always has one) instead of re-fetching it — addItem's own Promise.all
-    // already paid for this exact query once.
     const [food, itemAddons] = await Promise.all([
       knownFood && knownFood.id === item.foodId ? Promise.resolve(knownFood) : this.foodsService.findOne(item.foodId),
       this.orderItemAddonsRepository.find({ where: { orderItemId: item.id } }),
     ]);
 
+    const recipeGroups: Array<{
+      recipes: {
+        ingredientId: number;
+        unitId: number;
+        quantity: number;
+        wastageQuantity: number;
+      }[];
+      quantityMultiplier: number;
+    }> = [];
+
     if (food.itemType === 'kitchen') {
-      const recipes = await this.foodsService.resolveRecipes(
-        item.foodId,
-        item.foodVariantId,
-      );
-      await this.accumulateRecipeContributions(recipes, item.quantity, required);
+      recipeGroups.push({
+        recipes: await this.foodsService.resolveRecipes(item.foodId, item.foodVariantId),
+        quantityMultiplier: item.quantity,
+      });
     }
 
-    // Addon definitions + their recipes are resolved concurrently across
-    // addons (each addon's own recipe rows are independent of every other
-    // addon's), then merged into `required` one addon at a time.
     const addonRecipeGroups = await Promise.all(
       itemAddons.map(async (itemAddon) => {
         const addon = await this.addonsService.findOne(itemAddon.addonId);
         if (!addon.isRecipeEnabled) {
-          return { recipes: [], quantity: itemAddon.quantity };
+          return null;
         }
         const recipes = await this.addonsService.resolveRecipes(addon.id);
-        return { recipes, quantity: itemAddon.quantity };
+        return {
+          recipes: recipes.map((recipe) => ({
+            ingredientId: recipe.ingredientId,
+            unitId: recipe.unitId,
+            quantity: recipe.quantity * itemAddon.quantity,
+            wastageQuantity: recipe.wastageQuantity * itemAddon.quantity,
+          })),
+          quantityMultiplier: 1,
+        };
       }),
     );
-    for (const { recipes, quantity } of addonRecipeGroups) {
-      if (recipes.length === 0) continue;
-      await this.accumulateRecipeContributions(recipes, quantity, required);
+
+    for (const group of addonRecipeGroups) {
+      if (group) recipeGroups.push(group);
     }
+
+    if (recipeGroups.length === 0) {
+      return required;
+    }
+
+    const flattened = recipeGroups.flatMap((group) =>
+      group.recipes.map((recipe) => ({
+        ingredientId: recipe.ingredientId,
+        unitId: recipe.unitId,
+        quantity: recipe.quantity * group.quantityMultiplier,
+        wastageQuantity: recipe.wastageQuantity * group.quantityMultiplier,
+      })),
+    );
+
+    const ingredientIds = [...new Set(flattened.map((recipe) => recipe.ingredientId))];
+    const ingredients = await this.ingredientsService.findByIds(ingredientIds);
+    const ingredientById = new Map(
+      ingredients.map((ingredient) => [ingredient.id, ingredient]),
+    );
+    const conversions = await this.unitsService.findConversionMultipliers(
+      flattened.map((recipe) => ({
+        fromUnitId: recipe.unitId,
+        toUnitId: ingredientById.get(recipe.ingredientId)?.baseUnitId ?? 0,
+      })).filter((pair) => pair.toUnitId !== 0),
+    );
+
+    await this.accumulateRecipeContributions(
+      flattened,
+      1,
+      required,
+      ingredientById,
+      conversions,
+    );
 
     return required;
   }
